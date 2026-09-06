@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import pandas as pd
 from config import Settings
 from core.market_data import validate_ohlc
-from strategy import signal_series
+from strategy import indicators, signal_series
 
 
 @dataclass
@@ -28,19 +28,21 @@ class BacktestResult:
 
 
 def run_backtest(frame: pd.DataFrame, settings: Settings) -> BacktestResult:
-    data = validate_ohlc(frame)
+    data = indicators(validate_ohlc(frame), settings)
     signals = signal_series(data, settings)
     rows = []
+    next_available = 0
     for i, signal in signals.items():
-        if signal == 0 or i + 1 >= len(data):
+        if i < next_available or signal == 0 or i + 1 >= len(data):
             continue
         entry = float(data.iloc[i + 1]["open"])
         atr = float(data.iloc[i]["atr"])
-        if atr <= 0:
+        if pd.isna(atr) or atr <= 0:
             continue
         stop = entry - settings.stop_atr * atr if signal == 1 else entry + settings.stop_atr * atr
         target = entry + settings.target_r * abs(entry - stop) if signal == 1 else entry - settings.target_r * abs(entry - stop)
         outcome = None
+        exit_i = None
         for j in range(i + 1, len(data)):
             high, low = float(data.iloc[j]["high"]), float(data.iloc[j]["low"])
             if signal == 1 and low <= stop:
@@ -51,6 +53,7 @@ def run_backtest(frame: pd.DataFrame, settings: Settings) -> BacktestResult:
                 outcome = settings.target_r; exit_i = j; break
             if signal == -1 and low <= target:
                 outcome = settings.target_r; exit_i = j; break
-        if outcome is not None:
+        if outcome is not None and exit_i is not None:
             rows.append({"entry_time": data.iloc[i + 1]["time"], "exit_time": data.iloc[exit_i]["time"], "side": signal, "r": outcome})
+            next_available = exit_i + 1
     return BacktestResult(pd.DataFrame(rows), settings.starting_equity)
