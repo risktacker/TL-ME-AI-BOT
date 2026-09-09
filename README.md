@@ -42,7 +42,7 @@ python -m bot.main --mode signal --data data/XAUUSD_M15.csv
 
 `pipeline` is the preferred Windows command. With an Exness MT5 terminal open
 and logged in, it resolves the account's actual XAUUSD symbol/suffix, exports
-M1 and M15 history plus contract specifications, and writes the validation
+M15 history plus contract specifications, and writes the validation
 result to `reports/<symbol>_validation.json`. Login credentials are read by the
 terminal itself and are never written to the repository.
 
