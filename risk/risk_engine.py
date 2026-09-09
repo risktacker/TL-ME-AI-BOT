@@ -56,7 +56,8 @@ def volume_for_profile(equity: float, stop_distance: float, tick_size: float,
                        max_volume: float, settings: Settings) -> VolumeDecision:
     """Use broker minimum volume for micro mode; proportional sizing after it."""
     if settings.risk_profile == "micro_aggressive" and equity < settings.micro_balance_ceiling:
-        requested = max(settings.micro_volume, min_volume)
+        equity_steps = max(1, int(equity // settings.micro_equity_per_step))
+        requested = max(settings.micro_volume * equity_steps, min_volume)
         steps = (Decimal(str(requested)) / Decimal(str(volume_step))).to_integral_value(rounding=ROUND_DOWN)
         volume = min(float(steps * Decimal(str(volume_step))), max_volume)
         estimated = loss_at_volume(stop_distance, tick_size, tick_value, volume)

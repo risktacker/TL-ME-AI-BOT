@@ -31,7 +31,7 @@ gate before demo-forward trading; demo must pass before any live activation.
 - Target: 1.75R
 - Time stop: 12 M15 bars (3 hours)
 - Signal rearm: first qualified breakout per symbol/day; other symbols keep scanning
-- Micro mode: broker minimum 0.01 volume below the configured scaling threshold
+- Micro mode: 0.01 volume per configured $10 equity step below the scaling threshold
 - Scaling mode: proportional broker-aware sizing above the threshold
 - No daily-loss or consecutive-loss shutdown in `micro_aggressive` mode
 

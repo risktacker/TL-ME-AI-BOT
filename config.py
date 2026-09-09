@@ -25,7 +25,8 @@ class Settings:
     max_consecutive_losses: int = 3
     max_trades_per_day: int = 1
     risk_profile: str = "micro_aggressive"  # micro_aggressive or proportional
-    micro_balance_ceiling: float = 100.0
+    micro_balance_ceiling: float = 1000.0
+    micro_equity_per_step: float = 10.0
     micro_volume: float = 0.01
 
     # Regime and volatility measurement.
@@ -84,6 +85,7 @@ class Settings:
             max_trades_per_day=int(os.getenv("MAX_TRADES_PER_DAY", cls.max_trades_per_day)),
             risk_profile=os.getenv("RISK_PROFILE", cls.risk_profile).strip().lower(),
             micro_balance_ceiling=float(os.getenv("MICRO_BALANCE_CEILING", cls.micro_balance_ceiling)),
+            micro_equity_per_step=float(os.getenv("MICRO_EQUITY_PER_STEP", cls.micro_equity_per_step)),
             micro_volume=float(os.getenv("MICRO_VOLUME", cls.micro_volume)),
             minimum_edge_score=float(os.getenv("MINIMUM_EDGE_SCORE", cls.minimum_edge_score)),
             spread_price=float(os.getenv("BACKTEST_SPREAD_PRICE", cls.spread_price)),

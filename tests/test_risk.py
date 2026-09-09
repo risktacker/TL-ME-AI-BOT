@@ -38,3 +38,10 @@ def test_micro_profile_uses_minimum_volume_and_reports_structural_loss():
     assert decision.allowed
     assert decision.volume == 0.01
     assert decision.estimated_risk == 1.0
+
+
+def test_micro_volume_compounds_in_broker_steps():
+    decision = volume_for_profile(35, 1, 0.01, 1, 0.01, 0.01, 100,
+                                  Settings(risk_profile="micro_aggressive"))
+    assert decision.volume == 0.03
+    assert decision.estimated_risk == 3.0

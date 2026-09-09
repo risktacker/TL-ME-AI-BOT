@@ -30,6 +30,7 @@ class DemoService:
         self.store = store or RuntimeStore()
         self.executor = TradeExecutor(settings, self.gateway)
         self.symbols: list[str] = []
+        self.symbol_errors: dict[str, str] = {}
 
     def _publish_position(self) -> None:
         positions = self.gateway.positions(magic=self.settings.magic_number)
@@ -74,15 +75,19 @@ class DemoService:
         candidates = []
         latest_bars = {}
         for symbol in self.symbols:
-            symbol_settings = replace(self.settings, symbol=symbol)
-            rates = self.gateway.latest_rates(symbol, self.settings.timeframe, 800)
-            closed = rates.iloc[:-1].copy()
-            bar = closed.iloc[-1]["time"].isoformat()
-            latest_bars[symbol] = bar
-            signal = generate_signal(closed, symbol_settings)
-            signal["spread"] = float(rates.iloc[-1].get("spread", 0))
-            if signal["signal"]:
-                candidates.append((float(signal["edge_score"]), symbol, signal))
+            try:
+                symbol_settings = replace(self.settings, symbol=symbol)
+                rates = self.gateway.latest_rates(symbol, self.settings.timeframe, 800)
+                closed = rates.iloc[:-1].copy()
+                bar = closed.iloc[-1]["time"].isoformat()
+                latest_bars[symbol] = bar
+                signal = generate_signal(closed, symbol_settings)
+                signal["spread"] = float(rates.iloc[-1].get("spread", 0))
+                if signal["signal"]:
+                    candidates.append((float(signal["edge_score"]), symbol, signal))
+            except Exception as exc:
+                self.symbol_errors[symbol] = str(exc)
+                logging.warning("scanner skipped symbol=%s error=%s", symbol, exc)
         service = self.store.read("service", {})
         if service.get("last_processed_bars") == latest_bars: return "already_processed"
         self.store.write("service", {**service, "last_processed_bars": latest_bars,
@@ -90,7 +95,8 @@ class DemoService:
         if not candidates:
             self.store.write("market", {"symbol": "MULTI", "signal": "flat",
                                         "signal_reason": "scanner found no qualified edge",
-                                        "edge_score": 0, "scanned": len(self.symbols), "session": "scanner"})
+                                        "edge_score": 0, "scanned": len(latest_bars),
+                                        "unavailable": len(self.symbol_errors), "session": "scanner"})
             return "no_signal"
         _, symbol, signal = max(candidates, key=lambda candidate: candidate[0])
         bar = latest_bars[symbol]
@@ -125,7 +131,14 @@ class DemoService:
         configure_logging()
         self.gateway.connect()
         try:
-            self.symbols = [self.gateway.resolve_symbol(symbol) for symbol in self.settings.symbols]
+            for requested in self.settings.symbols:
+                try:
+                    self.symbols.append(self.gateway.resolve_symbol(requested))
+                except Exception as exc:
+                    self.symbol_errors[requested] = str(exc)
+                    logging.warning("unavailable requested_symbol=%s error=%s", requested, exc)
+            if not self.symbols:
+                raise RuntimeError("None of the configured markets could be resolved in MT5")
             while True:
                 try:
                     status = self.cycle()
