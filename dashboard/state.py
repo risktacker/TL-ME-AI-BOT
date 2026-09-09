@@ -26,6 +26,9 @@ def _validation() -> dict[str, Any]:
 
 
 def _trades() -> list[dict[str, Any]]:
+    runtime = _read_json(RUNTIME / "trades.json", {})
+    if isinstance(runtime.get("items"), list):
+        return runtime["items"][-10:]
     path = ROOT / "data" / "trades.csv"
     if not path.exists():
         return []

@@ -12,6 +12,10 @@ ATR stop and fixed-R target, rejects unaffordable minimum-lot trades, limits
 daily activity and losses, and records cost-adjusted results. MT5 submission
 and emergency closing exist behind three independent safety flags.
 
+The deployment runner processes completed M15 candles exactly once, refuses a
+non-demo account in demo mode, prevents duplicate positions, sizes from broker
+contract specifications, and places broker-side stop-loss/take-profit exits.
+
 No strategy is assumed profitable. Real Exness history must pass the validation
 gate before demo-forward trading; demo must pass before any live activation.
 
@@ -37,6 +41,7 @@ python -m bot.main --mode backtest --data data/XAUUSD_M15.csv
 python -m bot.main --mode validate --data data/XAUUSD_M15.csv
 python -m bot.main --mode signal --data data/XAUUSD_M15.csv
 uvicorn dashboard.app:app --host 0.0.0.0 --port 8000
+python -m bot.main --mode demo
 ```
 
 Open `http://localhost:8000` for the responsive GOLIDE control panel. It reads
@@ -49,6 +54,22 @@ M15 history plus contract specifications, and writes the validation
 result to `reports/<symbol>_validation.json`. Login credentials are read by the
 terminal itself and are never written to the repository.
 
+## Windows VPS deployment
+
+Open PowerShell in the repository on the VPS and run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\deploy\windows\Install-Golide.ps1
+```
+
+Edit `.env`, generate a long random `DASHBOARD_TOKEN`, and retain
+`EXECUTION_MODE=disabled` and `ENABLE_ORDER_SUBMISSION=false` until readiness
+and MT5 demo smoke tests are complete. The installer creates restartable tasks
+at Windows logon. `Start-Golide.ps1`, `Stop-Golide.ps1`, and
+`Test-Readiness.ps1` provide operational controls. The panel binds to localhost;
+remote publication requires a separate authenticated HTTPS tunnel.
+
 The CSV timestamps must be UTC and columns must include
 `time,open,high,low,close`. Backtests include configurable spread and slippage.
 
@@ -58,6 +79,10 @@ The untouched last 30% of history must have at least 50 trades, positive
 expectancy, profit factor of at least 1.20, at least 80% profitable bootstrap
 samples, and 95th-percentile Monte Carlo drawdown no worse than 10R. These are
 minimum research gates, not a profit guarantee.
+
+Validation additionally requires at least four profitable chronological folds
+out of five and positive performance when recorded spreads increase by 50% and
+configured slippage doubles.
 
 ## Safety
 

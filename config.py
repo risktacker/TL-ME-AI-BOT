@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def _bool(name: str, default: bool = False) -> bool:
@@ -57,6 +60,10 @@ class Settings:
     live_trading: bool = False
     enable_order_submission: bool = False
     validation_passed: bool = False
+    execution_mode: str = "disabled"  # disabled, demo, or live
+    dashboard_token: str = ""
+    poll_seconds: int = 15
+    magic_number: int = 260909
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -72,4 +79,8 @@ class Settings:
             live_trading=_bool("LIVE_TRADING"),
             enable_order_submission=_bool("ENABLE_ORDER_SUBMISSION"),
             validation_passed=_bool("VALIDATION_PASSED"),
+            execution_mode=os.getenv("EXECUTION_MODE", cls.execution_mode).strip().lower(),
+            dashboard_token=os.getenv("DASHBOARD_TOKEN", ""),
+            poll_seconds=int(os.getenv("POLL_SECONDS", cls.poll_seconds)),
+            magic_number=int(os.getenv("MAGIC_NUMBER", cls.magic_number)),
         )

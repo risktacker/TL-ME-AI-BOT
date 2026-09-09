@@ -13,13 +13,17 @@ from validation import validate_strategy
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="TL-ME XAUUSD intraday engine")
-    parser.add_argument("--mode", choices=("pipeline", "acquire", "backtest", "validate", "signal", "live"), default="backtest")
+    parser.add_argument("--mode", choices=("pipeline", "acquire", "backtest", "validate", "signal", "demo", "live"), default="backtest")
     parser.add_argument("--data", type=Path, help="UTC CSV: time,open,high,low,close")
     parser.add_argument("--days", type=int, default=730, help="MT5 history window")
     parser.add_argument("--output-dir", type=Path, default=Path("data/exness"))
     parser.add_argument("--report-dir", type=Path, default=Path("reports"))
     args = parser.parse_args()
     settings = Settings.from_env()
+    if args.mode == "demo":
+        from bot.service import run_service
+        run_service()
+        return
     if args.mode in {"pipeline", "acquire"}:
         from core.mt5_client import MT5Gateway
         from data_pipeline import acquire_and_validate, acquire_exness_history

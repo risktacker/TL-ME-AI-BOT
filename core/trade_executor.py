@@ -25,9 +25,16 @@ class TradeExecutor:
     gateway: MT5Gateway
 
     def _assert_unlocked(self) -> None:
-        if not (self.settings.live_trading and self.settings.enable_order_submission
-                and self.settings.validation_passed):
-            raise PermissionError("Live trading requires LIVE_TRADING, ENABLE_ORDER_SUBMISSION, and VALIDATION_PASSED")
+        mode = self.settings.execution_mode
+        if mode not in {"demo", "live"}:
+            raise PermissionError("Execution is disabled")
+        if not (self.settings.enable_order_submission and self.settings.validation_passed):
+            raise PermissionError("Submission requires ENABLE_ORDER_SUBMISSION and VALIDATION_PASSED")
+        account = self.gateway.account_snapshot()
+        if mode == "demo" and account["trade_mode"] != 0:
+            raise PermissionError("Demo mode refuses a non-demo MT5 account")
+        if mode == "live" and (not self.settings.live_trading or account["trade_mode"] == 0):
+            raise PermissionError("Live mode requires LIVE_TRADING and a non-demo MT5 account")
         if mt5 is None:
             raise RuntimeError("MetaTrader5 package is not installed")
 
@@ -38,9 +45,7 @@ class TradeExecutor:
         info = self.gateway.symbol_info(plan.symbol)
         if not info.visible and not mt5.symbol_select(plan.symbol, True):
             raise RuntimeError(f"Could not select {plan.symbol}")
-        tick = mt5.symbol_info_tick(plan.symbol)
-        if tick is None:
-            raise RuntimeError(f"No current tick for {plan.symbol}")
+        tick = self.gateway.current_tick(plan.symbol)
         price = float(tick.ask if plan.side == 1 else tick.bid)
         if plan.side == 1 and not (plan.stop_loss < price < plan.take_profit):
             raise ValueError("Invalid buy stop/target geometry")
@@ -49,7 +54,8 @@ class TradeExecutor:
         request = {
             "action": mt5.TRADE_ACTION_DEAL, "symbol": plan.symbol, "volume": plan.volume,
             "type": mt5.ORDER_TYPE_BUY if plan.side == 1 else mt5.ORDER_TYPE_SELL,
-            "price": price, "sl": plan.stop_loss, "tp": plan.take_profit,
+            "price": round(price, int(info.digits)), "sl": round(plan.stop_loss, int(info.digits)),
+            "tp": round(plan.take_profit, int(info.digits)),
             "deviation": plan.deviation, "magic": plan.magic, "comment": plan.comment,
             "type_time": mt5.ORDER_TIME_GTC, "type_filling": info.filling_mode,
         }
@@ -63,12 +69,10 @@ class TradeExecutor:
 
     def close_all(self, symbol: str | None = None) -> list[Any]:
         self._assert_unlocked()
-        positions = mt5.positions_get(symbol=symbol) if symbol else mt5.positions_get()
-        if positions is None:
-            raise RuntimeError(f"Could not read positions: {mt5.last_error()}")
+        positions = self.gateway.positions(symbol=symbol, magic=self.settings.magic_number)
         results = []
         for position in positions:
-            tick = mt5.symbol_info_tick(position.symbol)
+            tick = self.gateway.current_tick(position.symbol)
             side = mt5.ORDER_TYPE_SELL if position.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY
             price = tick.bid if side == mt5.ORDER_TYPE_SELL else tick.ask
             request = {
@@ -76,6 +80,7 @@ class TradeExecutor:
                 "symbol": position.symbol, "volume": position.volume, "type": side,
                 "price": price, "deviation": 30, "magic": 260909,
                 "comment": "TL-ME emergency close", "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": self.gateway.symbol_info(position.symbol).filling_mode,
             }
             result = mt5.order_send(request)
             if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
@@ -85,4 +90,3 @@ class TradeExecutor:
 
 
 LiveExecutor = TradeExecutor
-
