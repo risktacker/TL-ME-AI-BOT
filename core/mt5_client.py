@@ -1,13 +1,23 @@
-"""Small MT5 gateway. No browser automation and no DOM selectors."""
+"""MetaTrader 5 gateway for broker-native history and account metadata."""
 from __future__ import annotations
+
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 import pandas as pd
 
 try:
     import MetaTrader5 as mt5
-except ImportError:
+except ImportError:  # Linux CI intentionally does not install the Windows package.
     mt5 = None
+
+
+TIMEFRAMES = {
+    "M1": "TIMEFRAME_M1",
+    "M5": "TIMEFRAME_M5",
+    "M15": "TIMEFRAME_M15",
+    "H1": "TIMEFRAME_H1",
+}
 
 
 @dataclass
@@ -19,10 +29,10 @@ class MT5Gateway:
 
     def connect(self) -> None:
         if mt5 is None:
-            raise RuntimeError("MetaTrader5 package is not installed")
-        kwargs = {k: v for k, v in {"path": self.path, "login": self.login,
-                                     "password": self.password, "server": self.server}.items()
-                  if v is not None}
+            raise RuntimeError("MetaTrader5 is available only on the Windows MT5 host")
+        kwargs = {key: value for key, value in {
+            "path": self.path, "login": self.login, "password": self.password, "server": self.server,
+        }.items() if value is not None}
         if not mt5.initialize(**kwargs):
             raise RuntimeError(f"MT5 initialize failed: {mt5.last_error()}")
 
@@ -30,15 +40,32 @@ class MT5Gateway:
         if mt5 is not None:
             mt5.shutdown()
 
-    def rates(self, symbol: str, timeframe: int, count: int = 500) -> pd.DataFrame:
+    def resolve_symbol(self, requested: str) -> str:
+        """Resolve broker suffixes such as XAUUSDm without guessing silently."""
+        direct = mt5.symbol_info(requested) if mt5 else None
+        if direct is not None:
+            return requested
+        symbols = mt5.symbols_get(group=f"*{requested}*") if mt5 else None
+        names = sorted({item.name for item in symbols or ()})
+        exact_prefix = [name for name in names if name.upper().startswith(requested.upper())]
+        if len(exact_prefix) == 1:
+            return exact_prefix[0]
+        raise RuntimeError(f"Cannot uniquely resolve {requested}; MT5 candidates={names}")
+
+    def rates_range(self, symbol: str, timeframe: str, start: datetime,
+                    end: datetime) -> pd.DataFrame:
         if mt5 is None:
             raise RuntimeError("MetaTrader5 package is not installed")
-        rows = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
-        if rows is None:
-            raise RuntimeError(f"Could not load rates for {symbol}: {mt5.last_error()}")
+        constant_name = TIMEFRAMES.get(timeframe.upper())
+        if constant_name is None:
+            raise ValueError(f"Unsupported timeframe: {timeframe}")
+        rows = mt5.copy_rates_range(symbol, getattr(mt5, constant_name), start, end)
+        if rows is None or len(rows) == 0:
+            raise RuntimeError(f"No {timeframe} rates for {symbol}: {mt5.last_error()}")
         frame = pd.DataFrame(rows)
         frame["time"] = pd.to_datetime(frame["time"], unit="s", utc=True)
-        return frame[["time", "open", "high", "low", "close", "tick_volume"]]
+        columns = ["time", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]
+        return frame[[column for column in columns if column in frame.columns]]
 
     def account_equity(self) -> float:
         info = mt5.account_info() if mt5 else None
@@ -46,8 +73,30 @@ class MT5Gateway:
             raise RuntimeError("MT5 account information unavailable")
         return float(info.equity)
 
+    def account_snapshot(self) -> dict[str, Any]:
+        info = mt5.account_info() if mt5 else None
+        if info is None:
+            raise RuntimeError("MT5 account information unavailable")
+        return {
+            "login": int(info.login), "server": str(info.server), "currency": str(info.currency),
+            "balance": float(info.balance), "equity": float(info.equity),
+            "leverage": int(info.leverage), "trade_mode": int(info.trade_mode),
+        }
+
     def symbol_info(self, symbol: str) -> Any:
         info = mt5.symbol_info(symbol) if mt5 else None
         if info is None:
             raise RuntimeError(f"MT5 symbol unavailable: {symbol}")
         return info
+
+    def symbol_snapshot(self, symbol: str) -> dict[str, Any]:
+        info = self.symbol_info(symbol)
+        return {
+            "name": info.name, "digits": int(info.digits), "point": float(info.point),
+            "trade_tick_size": float(info.trade_tick_size),
+            "trade_tick_value": float(info.trade_tick_value),
+            "trade_contract_size": float(info.trade_contract_size),
+            "volume_min": float(info.volume_min), "volume_max": float(info.volume_max),
+            "volume_step": float(info.volume_step),
+        }
+
