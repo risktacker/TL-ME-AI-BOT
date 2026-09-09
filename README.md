@@ -36,7 +36,12 @@ python -m bot.main --mode pipeline --days 730
 python -m bot.main --mode backtest --data data/XAUUSD_M15.csv
 python -m bot.main --mode validate --data data/XAUUSD_M15.csv
 python -m bot.main --mode signal --data data/XAUUSD_M15.csv
+uvicorn dashboard.app:app --host 0.0.0.0 --port 8000
 ```
+
+Open `http://localhost:8000` for the responsive GOLIDE control panel. It reads
+validation, account, market, position and journal state. It can pause/resume
+demo monitoring and request an emergency stop. It has no live-unlock endpoint.
 
 `pipeline` is the preferred Windows command. With an Exness MT5 terminal open
 and logged in, it resolves the account's actual XAUUSD symbol/suffix, exports
