@@ -1,42 +1,37 @@
-"""TL-ME-AI-BOT entry point.
-
-Live trading is deliberately disabled unless both LIVE_TRADING=true and
-ENABLE_ORDER_SUBMISSION=true are set. Start with --mode backtest.
-"""
+"""CLI for backtest, validation, signal inspection, and locked live mode."""
 from __future__ import annotations
+
 import argparse
+from dataclasses import asdict
 from pathlib import Path
 import pandas as pd
-
+from backtest import run_backtest
 from config import Settings
 from strategy import generate_signal
-from backtest import run_backtest
+from validation import validate_strategy
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("backtest", "signal", "live"), default="backtest")
-    parser.add_argument("--data", type=Path, help="CSV with time,open,high,low,close columns")
+    parser = argparse.ArgumentParser(description="TL-ME XAUUSD intraday engine")
+    parser.add_argument("--mode", choices=("backtest", "validate", "signal", "live"), default="backtest")
+    parser.add_argument("--data", type=Path, help="UTC CSV: time,open,high,low,close")
     args = parser.parse_args()
     settings = Settings.from_env()
-
     if args.mode == "live":
-        if not settings.live_trading or not settings.enable_order_submission:
-            raise SystemExit("Live trading is locked. Set both safety flags explicitly after testing.")
-        from execution import LiveExecutor
-        LiveExecutor(settings).run()
-        return
-
+        if not (settings.live_trading and settings.enable_order_submission and settings.validation_passed):
+            raise SystemExit("Live mode is locked by three independent safety flags.")
+        raise SystemExit("Connect the Exness MT5 terminal and run the deployment loop on a Windows host.")
     if args.data is None:
-        raise SystemExit("--data is required for backtest and signal modes")
+        raise SystemExit("--data is required")
     frame = pd.read_csv(args.data, parse_dates=["time"]).sort_values("time").reset_index(drop=True)
-
     if args.mode == "signal":
         print(generate_signal(frame, settings))
+    elif args.mode == "validate":
+        print(asdict(validate_strategy(frame, settings)))
     else:
-        result = run_backtest(frame, settings)
-        print(result.summary())
+        print(run_backtest(frame, settings).summary())
 
 
 if __name__ == "__main__":
     main()
+
