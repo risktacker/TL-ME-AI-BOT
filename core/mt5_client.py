@@ -59,6 +59,8 @@ class MT5Gateway:
         constant_name = TIMEFRAMES.get(timeframe.upper())
         if constant_name is None:
             raise ValueError(f"Unsupported timeframe: {timeframe}")
+        if not mt5.symbol_select(symbol, True):
+            raise RuntimeError(f"Could not select {symbol}: {mt5.last_error()}")
         rows = mt5.copy_rates_range(symbol, getattr(mt5, constant_name), start, end)
         if rows is None or len(rows) == 0:
             raise RuntimeError(f"No {timeframe} rates for {symbol}: {mt5.last_error()}")
@@ -99,4 +101,3 @@ class MT5Gateway:
             "volume_min": float(info.volume_min), "volume_max": float(info.volume_max),
             "volume_step": float(info.volume_step),
         }
-
