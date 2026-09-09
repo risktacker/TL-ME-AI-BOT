@@ -26,7 +26,7 @@ def _json_safe(value: Any) -> Any:
 
 def acquire_exness_history(gateway: MT5Gateway, settings: Settings, output_dir: Path,
                            days: int = 730, now: datetime | None = None) -> dict[str, Any]:
-    """Export M1/M15 candles and broker specifications from the logged-in terminal."""
+    """Export M15 candles and broker specifications from the logged-in terminal."""
     if days < 90:
         raise ValueError("At least 90 days are required; two years is recommended")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -37,7 +37,7 @@ def acquire_exness_history(gateway: MT5Gateway, settings: Settings, output_dir: 
         symbol = gateway.resolve_symbol(settings.symbol)
         files: dict[str, str] = {}
         counts: dict[str, int] = {}
-        for timeframe in ("M1", "M15"):
+        for timeframe in ("M15",):
             frame = validate_ohlc(gateway.rates_range(symbol, timeframe, start, end))
             target = output_dir / f"{symbol}_{timeframe}.csv"
             frame.to_csv(target, index=False)
@@ -68,4 +68,3 @@ def acquire_and_validate(gateway: MT5Gateway, settings: Settings, output_dir: Pa
     report_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     payload["report"] = str(report_path)
     return payload
-
