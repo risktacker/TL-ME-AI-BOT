@@ -37,8 +37,6 @@ def run_backtest(frame: pd.DataFrame, settings: Settings) -> BacktestResult:
     rows: list[dict] = []
     next_available = 0
     daily: dict[str, dict[str, float | int]] = {}
-    cost = settings.spread_price + 2 * settings.slippage_price
-
     for i in range(len(data) - 1):
         side = int(signals.iloc[i])
         if i < next_available or side == 0:
@@ -54,6 +52,9 @@ def run_backtest(frame: pd.DataFrame, settings: Settings) -> BacktestResult:
             continue
 
         entry = float(data.iloc[i + 1]["open"])
+        spread = (float(data.iloc[i + 1]["spread"]) * settings.point_price
+                  if "spread" in data else settings.spread_price)
+        cost = spread + 2 * settings.slippage_price
         risk_distance = settings.stop_atr * atr
         stop = entry - risk_distance if side == 1 else entry + risk_distance
         target = entry + settings.target_r * risk_distance if side == 1 else entry - settings.target_r * risk_distance
@@ -72,9 +73,10 @@ def run_backtest(frame: pd.DataFrame, settings: Settings) -> BacktestResult:
             if (side == 1 and high >= target) or (side == -1 and low <= target):
                 outcome, exit_i, exit_reason = settings.target_r, j, "target"
                 break
-            break_even_trigger = entry + settings.break_even_at_r * risk_distance if side == 1 else entry - settings.break_even_at_r * risk_distance
-            if (side == 1 and high >= break_even_trigger) or (side == -1 and low <= break_even_trigger):
-                stop_live = entry
+            if settings.break_even_at_r > 0:
+                break_even_trigger = entry + settings.break_even_at_r * risk_distance if side == 1 else entry - settings.break_even_at_r * risk_distance
+                if (side == 1 and high >= break_even_trigger) or (side == -1 and low <= break_even_trigger):
+                    stop_live = entry
             if j == end:
                 raw_r = ((close - entry) * side) / risk_distance
                 outcome, exit_i, exit_reason = max(-1.0, min(settings.target_r, raw_r)), j, "time"
