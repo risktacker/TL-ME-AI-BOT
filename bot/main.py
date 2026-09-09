@@ -12,7 +12,7 @@ from validation import validate_strategy
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="TL-ME XAUUSD intraday engine")
+    parser = argparse.ArgumentParser(description="TL-ME multi-market intraday engine")
     parser.add_argument("--mode", choices=("pipeline", "acquire", "backtest", "validate", "signal", "demo", "live"), default="backtest")
     parser.add_argument("--data", type=Path, help="UTC CSV: time,open,high,low,close")
     parser.add_argument("--days", type=int, default=730, help="MT5 history window")
@@ -26,9 +26,9 @@ def main() -> None:
         return
     if args.mode in {"pipeline", "acquire"}:
         from core.mt5_client import MT5Gateway
-        from data_pipeline import acquire_and_validate, acquire_exness_history
+        from data_pipeline import acquire_universe_and_validate, acquire_exness_history
         gateway = MT5Gateway()
-        result = (acquire_and_validate(gateway, settings, args.output_dir, args.report_dir, args.days)
+        result = (acquire_universe_and_validate(gateway, settings, args.output_dir, args.report_dir, args.days)
                   if args.mode == "pipeline"
                   else acquire_exness_history(gateway, settings, args.output_dir, args.days))
         print(result)

@@ -29,10 +29,19 @@ class VolumeDecision:
     estimated_risk: float
 
 
+def loss_at_volume(stop_distance: float, tick_size: float, tick_value: float,
+                   volume: float) -> float:
+    if min(stop_distance, tick_size, tick_value, volume) <= 0:
+        return 0.0
+    return (stop_distance / tick_size) * tick_value * volume
+
+
 def approve_trade(equity: float, state: RiskState, stop_distance: float,
                   settings: Settings) -> RiskDecision:
     if equity <= 0 or stop_distance <= 0:
         return RiskDecision(False, "invalid_equity_or_stop", 0.0, stop_distance)
+    if settings.risk_profile == "micro_aggressive":
+        return RiskDecision(True, "micro_structure_approved", 0.0, stop_distance)
     if state.daily_pnl <= -equity * settings.max_daily_loss_pct:
         return RiskDecision(False, "daily_loss_limit", 0.0, stop_distance)
     if state.consecutive_losses >= settings.max_consecutive_losses:
@@ -40,6 +49,20 @@ def approve_trade(equity: float, state: RiskState, stop_distance: float,
     if state.trades_today >= settings.max_trades_per_day:
         return RiskDecision(False, "daily_trade_limit", 0.0, stop_distance)
     return RiskDecision(True, "approved", equity * settings.risk_per_trade_pct, stop_distance)
+
+
+def volume_for_profile(equity: float, stop_distance: float, tick_size: float,
+                       tick_value: float, volume_step: float, min_volume: float,
+                       max_volume: float, settings: Settings) -> VolumeDecision:
+    """Use broker minimum volume for micro mode; proportional sizing after it."""
+    if settings.risk_profile == "micro_aggressive" and equity < settings.micro_balance_ceiling:
+        requested = max(settings.micro_volume, min_volume)
+        steps = (Decimal(str(requested)) / Decimal(str(volume_step))).to_integral_value(rounding=ROUND_DOWN)
+        volume = min(float(steps * Decimal(str(volume_step))), max_volume)
+        estimated = loss_at_volume(stop_distance, tick_size, tick_value, volume)
+        return VolumeDecision(volume >= min_volume, "micro_minimum_volume", round(volume, 8), estimated)
+    return volume_from_risk(equity * settings.risk_per_trade_pct, stop_distance, tick_size,
+                            tick_value, volume_step, min_volume, max_volume)
 
 
 def volume_from_risk(risk_amount: float, stop_distance: float, tick_size: float,
@@ -57,4 +80,3 @@ def volume_from_risk(risk_amount: float, stop_distance: float, tick_size: float,
     volume = min(volume, max_volume)
     estimated = risk_per_lot * volume
     return VolumeDecision(True, "approved", round(volume, 8), estimated)
-

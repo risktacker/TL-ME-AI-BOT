@@ -66,11 +66,35 @@ def signal_series(frame: pd.DataFrame, settings: Settings) -> pd.Series:
     raw = pd.Series(0, index=data.index, dtype="int8")
     raw.loc[long_signal.fillna(False)] = 1
     raw.loc[short_signal.fillna(False)] = -1
+    # The tested edge is the first qualified breakout for this market-day. This
+    # is signal de-duplication, not a loss shutdown; other markets keep scanning.
     fired = raw.ne(0)
-    prior_fired = fired.groupby(data["time"].dt.strftime("%Y-%m-%d")).cumsum() - fired.astype(int)
-    raw.loc[fired & prior_fired.gt(0)] = 0
+    prior_today = fired.groupby(data["time"].dt.strftime("%Y-%m-%d")).cumsum() - fired.astype(int)
+    raw.loc[fired & prior_today.gt(0)] = 0
+    scores = pd.Series((_edge_score(data.iloc[index], int(raw.iloc[index]))
+                        for index in range(len(data))), index=data.index, dtype=float)
+    raw.loc[raw.ne(0) & scores.lt(settings.minimum_edge_score)] = 0
+    raw.attrs["edge_scores"] = scores
     raw.attrs["data"] = data
     return raw
+
+
+def _edge_score(row: pd.Series, signal: int) -> float:
+    """Rank valid setups using dimensionless momentum and structure inputs."""
+    atr = float(row["atr"])
+    if not atr > 0 or signal == 0:
+        return 0.0
+    direction = float(signal)
+    displacement = abs(float(row["close"] - row["open"])) / atr
+    h1_separation = direction * float(row["trend_fast"] - row["trend_slow"]) / atr
+    h4_separation = direction * float(row["h4_fast"] - row["h4_slow"]) / atr
+    level = float(row["donchian_high"] if signal == 1 else row["donchian_low"])
+    breakout = direction * float(row["close"] - level) / atr
+    structure = int(bool(row["bull_bos"] if signal == 1 else row["bear_bos"]))
+    imbalance = int(bool((row["bull_fvg"] or row["bull_ifvg"]) if signal == 1
+                         else (row["bear_fvg"] or row["bear_ifvg"])))
+    return round(displacement + max(0.0, h1_separation) + max(0.0, h4_separation)
+                 + max(0.0, breakout) + structure + 0.5 * imbalance, 4)
 
 
 def generate_signal(frame: pd.DataFrame, settings: Settings) -> dict:
@@ -80,9 +104,12 @@ def generate_signal(frame: pd.DataFrame, settings: Settings) -> dict:
         return {"symbol": settings.symbol, "signal": 0, "reason": "no_data"}
     row = data.iloc[-1]
     signal = int(signals.iloc[-1])
+    score = float(signals.attrs["edge_scores"].iloc[-1])
     return {
         "symbol": settings.symbol, "strategy": settings.strategy_name, "signal": signal,
         "side": "buy" if signal == 1 else "sell" if signal == -1 else "flat",
+        "edge_score": score,
+        "qualified": bool(signal),
         "session": row["session"],
         "atr": None if pd.isna(row["atr"]) else float(row["atr"]),
         "opening_high": None if pd.isna(row["opening_high"]) else float(row["opening_high"]),

@@ -12,6 +12,7 @@ from config import Settings
 from core.market_data import validate_ohlc
 from core.mt5_client import MT5Gateway
 from validation import validate_strategy
+from dataclasses import replace
 
 
 def _json_safe(value: Any) -> Any:
@@ -68,3 +69,26 @@ def acquire_and_validate(gateway: MT5Gateway, settings: Settings, output_dir: Pa
     report_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     payload["report"] = str(report_path)
     return payload
+
+
+def acquire_universe_and_validate(gateway: MT5Gateway, settings: Settings, output_dir: Path,
+                                  report_dir: Path, days: int = 730,
+                                  now: datetime | None = None) -> dict[str, Any]:
+    """Export and validate every configured market independently."""
+    results: dict[str, Any] = {}
+    for requested in settings.symbols:
+        symbol_settings = replace(settings, symbol=requested, symbols=(requested,))
+        try:
+            results[requested] = acquire_and_validate(
+                gateway, symbol_settings, output_dir, report_dir, days, now,
+            )
+        except Exception as exc:
+            results[requested] = {"error": str(exc)}
+    passed = [name for name, payload in results.items()
+              if payload.get("validation", {}).get("passed")]
+    report_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = report_dir / "universe_validation.json"
+    summary = {"requested": list(settings.symbols), "passed": passed, "markets": results}
+    summary_path.write_text(json.dumps(_json_safe(summary), indent=2), encoding="utf-8")
+    summary["report"] = str(summary_path)
+    return summary

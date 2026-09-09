@@ -1,27 +1,27 @@
 # TL-ME-AI-BOT
 
-Focused Exness/MT5 XAUUSD intraday engine. The default package uses a 20-bar
-Donchian breakout with aligned H1/H4 trend, displacement and volatility
-confirmation. It targets fast session trades, not swings.
+Focused Exness/MT5 multi-market intraday engine. It continuously scans liquid
+FX majors and XAUUSD, ranks qualified setups, and acts on the strongest closed-
+candle decision. It targets fast session trades, not swings.
 
 ## Capability
 
-The engine reads closed MT5 candles, follows aligned H1/H4 regimes, confirms
-M15 momentum breakouts, calculates an
-ATR stop and fixed-R target, rejects unaffordable minimum-lot trades, limits
-daily activity and losses, and records cost-adjusted results. MT5 submission
+The engine reads closed MT5 candles across the configured universe, follows
+aligned H1/H4 regimes, confirms M15 momentum breakouts, calculates an ATR stop
+and fixed-R target, ranks simultaneous edges, and records cost-adjusted results. MT5 submission
 and emergency closing exist behind three independent safety flags.
 
 The deployment runner processes completed M15 candles exactly once, refuses a
 non-demo account in demo mode, prevents duplicate positions, sizes from broker
-contract specifications, and places broker-side stop-loss/take-profit exits.
+contract specifications, places broker-side stop-loss/take-profit exits, and
+enforces the same three-hour time exit used by the backtest.
 
 No strategy is assumed profitable. Real Exness history must pass the validation
 gate before demo-forward trading; demo must pass before any live activation.
 
 ## Strategy package
 
-- Instrument: XAUUSD (the configured MT5 symbol or suffix)
+- Universe: EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, USDCHF and XAUUSD by default
 - Signal timeframe: M15
 - Regime: aligned H1 EMA 20/50 and H4 EMA 12/30
 - Active window: 06:00-16:59 UTC
@@ -30,8 +30,10 @@ gate before demo-forward trading; demo must pass before any live activation.
 - Initial stop: 1.50 ATR
 - Target: 1.75R
 - Time stop: 12 M15 bars (3 hours)
-- Limit: 1 trade/day; stop after 3 consecutive losses or 1% daily loss
-- Risk: 0.25% of equity per trade
+- Signal rearm: first qualified breakout per symbol/day; other symbols keep scanning
+- Micro mode: broker minimum 0.01 volume below the configured scaling threshold
+- Scaling mode: proportional broker-aware sizing above the threshold
+- No daily-loss or consecutive-loss shutdown in `micro_aggressive` mode
 
 ## Commands
 
@@ -49,9 +51,9 @@ validation, account, market, position and journal state. It can pause/resume
 demo monitoring and request an emergency stop. It has no live-unlock endpoint.
 
 `pipeline` is the preferred Windows command. With an Exness MT5 terminal open
-and logged in, it resolves the account's actual XAUUSD symbol/suffix, exports
-M15 history plus contract specifications, and writes the validation
-result to `reports/<symbol>_validation.json`. Login credentials are read by the
+and logged in, it resolves broker symbol suffixes, exports M15 history and
+contract specifications for every configured market, and writes individual
+reports plus `reports/universe_validation.json`. Login credentials are read by the
 terminal itself and are never written to the repository.
 
 ## Windows VPS deployment
@@ -88,7 +90,7 @@ configured slippage doubles.
 
 - No DOM/browser automation
 - No martingale or averaging down
-- No forced minimum-lot trade when account risk is too small
+- Micro mode deliberately uses minimum volume and records its estimated stop loss
 - No credentials in Git
 - Live submission requires `LIVE_TRADING=true`,
   `ENABLE_ORDER_SUBMISSION=true`, and `VALIDATION_PASSED=true`

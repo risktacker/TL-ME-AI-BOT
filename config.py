@@ -1,4 +1,4 @@
-"""Configuration for the XAUUSD intraday research and execution engine."""
+"""Configuration for the GOLIDE multi-market intraday engine."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,6 +15,7 @@ def _bool(name: str, default: bool = False) -> bool:
 @dataclass(frozen=True)
 class Settings:
     symbol: str = "XAUUSD"
+    symbols: tuple[str, ...] = ("EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "XAUUSD")
     timeframe: str = "M15"
     strategy_name: str = "donchian_mtf_momentum"
 
@@ -23,6 +24,9 @@ class Settings:
     max_daily_loss_pct: float = 0.01
     max_consecutive_losses: int = 3
     max_trades_per_day: int = 1
+    risk_profile: str = "micro_aggressive"  # micro_aggressive or proportional
+    micro_balance_ceiling: float = 100.0
+    micro_volume: float = 0.01
 
     # Regime and volatility measurement.
     trend_fast_ema: int = 20
@@ -41,6 +45,7 @@ class Settings:
     breakout_buffer_atr: float = 0.05
     displacement_body_atr: float = 0.40
     confirmation_score: int = 2
+    minimum_edge_score: float = 0.0
     use_london: bool = True
     use_new_york: bool = True
 
@@ -67,13 +72,20 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        symbols = tuple(item.strip().upper() for item in
+                        os.getenv("BOT_SYMBOLS", ",".join(cls.symbols)).split(",") if item.strip())
         return cls(
             symbol=os.getenv("BOT_SYMBOL", cls.symbol),
+            symbols=symbols or cls.symbols,
             strategy_name=os.getenv("BOT_STRATEGY", cls.strategy_name),
             risk_per_trade_pct=float(os.getenv("RISK_PER_TRADE_PCT", cls.risk_per_trade_pct)),
             max_daily_loss_pct=float(os.getenv("MAX_DAILY_LOSS_PCT", cls.max_daily_loss_pct)),
             max_consecutive_losses=int(os.getenv("MAX_CONSECUTIVE_LOSSES", cls.max_consecutive_losses)),
             max_trades_per_day=int(os.getenv("MAX_TRADES_PER_DAY", cls.max_trades_per_day)),
+            risk_profile=os.getenv("RISK_PROFILE", cls.risk_profile).strip().lower(),
+            micro_balance_ceiling=float(os.getenv("MICRO_BALANCE_CEILING", cls.micro_balance_ceiling)),
+            micro_volume=float(os.getenv("MICRO_VOLUME", cls.micro_volume)),
+            minimum_edge_score=float(os.getenv("MINIMUM_EDGE_SCORE", cls.minimum_edge_score)),
             spread_price=float(os.getenv("BACKTEST_SPREAD_PRICE", cls.spread_price)),
             slippage_price=float(os.getenv("BACKTEST_SLIPPAGE_PRICE", cls.slippage_price)),
             live_trading=_bool("LIVE_TRADING"),

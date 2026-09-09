@@ -48,6 +48,9 @@ class MT5Gateway:
         symbols = mt5.symbols_get(group=f"*{requested}*") if mt5 else None
         names = sorted({item.name for item in symbols or ()})
         exact_prefix = [name for name in names if name.upper().startswith(requested.upper())]
+        broker_standard = [name for name in exact_prefix if name.upper() == f"{requested.upper()}M"]
+        if len(broker_standard) == 1:
+            return broker_standard[0]
         if len(exact_prefix) == 1:
             return exact_prefix[0]
         raise RuntimeError(f"Cannot uniquely resolve {requested}; MT5 candidates={names}")

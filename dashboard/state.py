@@ -42,10 +42,11 @@ def overview() -> dict[str, Any]:
     position = _read_json(RUNTIME / "position.json", {"open": False})
     return {
         "updated_at": datetime.now(timezone.utc).isoformat(),
-        "bot": {"name": "TL-ME XAUUSD", "strategy": "Donchian MTF Momentum", "mode": control.get("mode", "locked"), "paused": bool(control.get("paused", True)), "live_unlocked": False, "connection": "connected" if market.get("session") != "offline" else "offline"},
+        "bot": {"name": "TL-ME Multi-Market", "strategy": "Ranked MTF Momentum", "mode": control.get("mode", "locked"), "paused": bool(control.get("paused", True)), "live_unlocked": False, "connection": "connected" if market.get("session") != "offline" else "offline"},
         "account": account, "market": market, "position": position,
         "validation": _validation(), "recent_trades": _trades(),
-        "risk": {"risk_per_trade_pct": 0.25, "daily_loss_limit_pct": 1.0, "maximum_trades_daily": 1, "consecutive_loss_limit": 3},
+        "risk": {"profile": "micro_aggressive", "micro_volume": 0.01,
+                 "selection": "highest_ranked_qualified_setup", "daily_shutdown": False},
     }
 
 

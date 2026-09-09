@@ -1,5 +1,6 @@
 """Fail-closed MT5 demo service for one closed-candle decision at a time."""
 from __future__ import annotations
+from dataclasses import replace
 from datetime import datetime, timezone
 import logging
 from logging.handlers import RotatingFileHandler
@@ -10,7 +11,7 @@ from config import Settings
 from core.journal import RuntimeStore
 from core.mt5_client import MT5Gateway
 from core.trade_executor import TradeExecutor, TradePlan
-from risk.risk_engine import RiskState, approve_trade, volume_from_risk
+from risk.risk_engine import RiskState, approve_trade, volume_for_profile
 from strategy import generate_signal
 
 
@@ -28,10 +29,10 @@ class DemoService:
         self.gateway = gateway or MT5Gateway(path=None)
         self.store = store or RuntimeStore()
         self.executor = TradeExecutor(settings, self.gateway)
-        self.symbol = settings.symbol
+        self.symbols: list[str] = []
 
     def _publish_position(self) -> None:
-        positions = self.gateway.positions(self.symbol, self.settings.magic_number)
+        positions = self.gateway.positions(magic=self.settings.magic_number)
         if not positions:
             self.store.write("position", {"open": False})
             return
@@ -45,7 +46,7 @@ class DemoService:
     def cycle(self) -> str:
         control = self.store.read("control", {"mode": "locked", "paused": True})
         if control.get("close_all_requested"):
-            closed = self.executor.close_all(self.symbol)
+            closed = self.executor.close_all()
             self.store.write("control", {"mode": "emergency_stop", "paused": True,
                                          "close_all_requested": False})
             self.store.event("emergency_close", positions=len(closed))
@@ -60,49 +61,75 @@ class DemoService:
         if control.get("paused", True): return "paused"
         if not terminal["connected"] or not terminal["trade_allowed"] or terminal["tradeapi_disabled"]:
             raise RuntimeError("MT5 terminal is not ready for automated trading")
-        if self.gateway.positions(self.symbol, self.settings.magic_number): return "position_open"
-        rates = self.gateway.latest_rates(self.symbol, self.settings.timeframe, 800)
-        closed = rates.iloc[:-1].copy()
-        bar = closed.iloc[-1]["time"].isoformat()
+        positions = self.gateway.positions(magic=self.settings.magic_number)
+        if positions:
+            maximum_seconds = self.settings.max_holding_bars * 15 * 60
+            now_ts = datetime.now(timezone.utc).timestamp()
+            expired = [position for position in positions if now_ts - float(position.time) >= maximum_seconds]
+            for position in expired:
+                self.executor.close_position(position)
+                self.store.event("time_exit", ticket=int(position.ticket), symbol=str(position.symbol))
+            return "time_exit" if expired else "position_open"
+
+        candidates = []
+        latest_bars = {}
+        for symbol in self.symbols:
+            symbol_settings = replace(self.settings, symbol=symbol)
+            rates = self.gateway.latest_rates(symbol, self.settings.timeframe, 800)
+            closed = rates.iloc[:-1].copy()
+            bar = closed.iloc[-1]["time"].isoformat()
+            latest_bars[symbol] = bar
+            signal = generate_signal(closed, symbol_settings)
+            signal["spread"] = float(rates.iloc[-1].get("spread", 0))
+            if signal["signal"]:
+                candidates.append((float(signal["edge_score"]), symbol, signal))
         service = self.store.read("service", {})
-        if service.get("last_processed_bar") == bar: return "already_processed"
-        signal = generate_signal(closed, self.settings)
-        self.store.write("market", {**signal, "signal": signal["side"], "signal_reason": "closed M15 decision",
-                                    "spread": float(rates.iloc[-1].get("spread", 0)), "session": signal.get("session", "")})
-        self.store.write("service", {**service, "last_processed_bar": bar,
+        if service.get("last_processed_bars") == latest_bars: return "already_processed"
+        self.store.write("service", {**service, "last_processed_bars": latest_bars,
                                      "heartbeat": datetime.now(timezone.utc).isoformat()})
-        if signal["signal"] == 0: return "no_signal"
+        if not candidates:
+            self.store.write("market", {"symbol": "MULTI", "signal": "flat",
+                                        "signal_reason": "scanner found no qualified edge",
+                                        "edge_score": 0, "scanned": len(self.symbols), "session": "scanner"})
+            return "no_signal"
+        _, symbol, signal = max(candidates, key=lambda candidate: candidate[0])
+        bar = latest_bars[symbol]
+        self.store.write("market", {**signal, "signal": signal["side"],
+                                    "signal_reason": "highest-ranked closed M15 edge",
+                                    "scanned": len(self.symbols), "candidates": len(candidates)})
         atr = float(signal["atr"])
-        tick = self.gateway.symbol_info(self.symbol)
+        tick = self.gateway.symbol_info(symbol)
         decision = approve_trade(float(account["equity"]), RiskState(**risk_raw), self.settings.stop_atr * atr, self.settings)
         if not decision.allowed:
             self.store.event("risk_rejected", reason=decision.reason, bar=bar)
             return decision.reason
-        volume = volume_from_risk(decision.risk_amount, decision.stop_distance,
-                                  float(tick.trade_tick_size), float(tick.trade_tick_value),
-                                  float(tick.volume_step), float(tick.volume_min), float(tick.volume_max))
+        volume = volume_for_profile(float(account["equity"]), decision.stop_distance,
+                                    float(tick.trade_tick_size), float(tick.trade_tick_value),
+                                    float(tick.volume_step), float(tick.volume_min), float(tick.volume_max),
+                                    self.settings)
         if not volume.allowed:
             self.store.event("size_rejected", reason=volume.reason, estimated_risk=volume.estimated_risk)
             return volume.reason
-        quote = self.gateway.current_tick(self.symbol)
+        quote = self.gateway.current_tick(symbol)
         price = float(quote.ask if signal["signal"] == 1 else quote.bid)
         stop = price - decision.stop_distance if signal["signal"] == 1 else price + decision.stop_distance
         target = price + self.settings.target_r * decision.stop_distance if signal["signal"] == 1 else price - self.settings.target_r * decision.stop_distance
-        result = self.executor.submit(TradePlan(self.symbol, signal["signal"], volume.volume, stop, target,
-                                                magic=self.settings.magic_number, comment="GOLIDE M15 demo"))
+        result = self.executor.submit(TradePlan(symbol, signal["signal"], volume.volume, stop, target,
+                                                magic=self.settings.magic_number, comment="GOLIDE ranked M15"))
         self.store.event("order_submitted", order=int(result.order), deal=int(result.deal), bar=bar,
-                         side=signal["side"], volume=volume.volume)
+                         side=signal["side"], volume=volume.volume, edge_score=signal["edge_score"],
+                         estimated_stop_loss=volume.estimated_risk)
         return "submitted"
 
     def run_forever(self) -> None:
         configure_logging()
         self.gateway.connect()
         try:
-            self.symbol = self.gateway.resolve_symbol(self.settings.symbol)
+            self.symbols = [self.gateway.resolve_symbol(symbol) for symbol in self.settings.symbols]
             while True:
                 try:
                     status = self.cycle()
-                    logging.info("cycle=%s symbol=%s", status, self.symbol)
+                    logging.info("cycle=%s symbols=%s", status, ",".join(self.symbols))
                 except Exception as exc:
                     logging.exception("cycle failed")
                     self.store.write("service", {"heartbeat": datetime.now(timezone.utc).isoformat(),

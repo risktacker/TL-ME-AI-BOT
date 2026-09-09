@@ -43,10 +43,11 @@ def run_backtest(frame: pd.DataFrame, settings: Settings) -> BacktestResult:
             continue
         day = str(data.iloc[i]["time"].date())
         state = daily.setdefault(day, {"r": 0.0, "trades": 0, "losses": 0})
-        if state["r"] <= -(settings.max_daily_loss_pct / settings.risk_per_trade_pct):
-            continue
-        if state["trades"] >= settings.max_trades_per_day or state["losses"] >= settings.max_consecutive_losses:
-            continue
+        if settings.risk_profile != "micro_aggressive":
+            if state["r"] <= -(settings.max_daily_loss_pct / settings.risk_per_trade_pct):
+                continue
+            if state["trades"] >= settings.max_trades_per_day or state["losses"] >= settings.max_consecutive_losses:
+                continue
         atr = float(data.iloc[i]["atr"])
         if not atr > 0:
             continue

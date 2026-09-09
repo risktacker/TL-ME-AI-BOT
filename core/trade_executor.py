@@ -88,5 +88,22 @@ class TradeExecutor:
             results.append(result)
         return results
 
+    def close_position(self, position: Any, comment: str = "GOLIDE timed exit") -> Any:
+        self._assert_unlocked()
+        tick = self.gateway.current_tick(position.symbol)
+        side = mt5.ORDER_TYPE_SELL if position.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL, "position": position.ticket,
+            "symbol": position.symbol, "volume": position.volume, "type": side,
+            "price": tick.bid if side == mt5.ORDER_TYPE_SELL else tick.ask,
+            "deviation": 30, "magic": self.settings.magic_number, "comment": comment,
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": self.gateway.symbol_info(position.symbol).filling_mode,
+        }
+        result = mt5.order_send(request)
+        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+            raise RuntimeError(f"Position close failed for {position.ticket}: {result}")
+        return result
+
 
 LiveExecutor = TradeExecutor
