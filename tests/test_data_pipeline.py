@@ -29,6 +29,5 @@ def test_acquisition_exports_broker_data(tmp_path: Path):
     )
     assert gateway.connected and gateway.closed
     assert result["symbol"] == "XAUUSDm"
-    assert Path(result["files"]["M1"]).exists()
+    assert Path(result["files"]["M15"]).exists()
     assert Path(result["metadata"]).exists()
-
