@@ -1,28 +1,60 @@
 # TL-ME-AI-BOT
 
-Focused MT5/XAUUSD research system. The first strategy hypothesis is a
-trend-regime Donchian breakout with ATR-normalised stops and fixed-fractional
-risk. It is not claimed profitable until it passes reproducible historical,
-out-of-sample, walk-forward, and demo-forward tests.
+Focused Exness/MT5 XAUUSD intraday engine. The default package combines an
+opening-range breakout, higher-timeframe trend, momentum/volatility filters,
+and objective FVG/IFVG/BOS/liquidity features. It targets fast session trades,
+not swings.
 
-## Safety status
+## Capability
 
-Live trading is disabled by default. The current executor refuses order
-submission and emergency-close is still unimplemented. Do not add credentials
-to the repository.
+The engine reads closed MT5 candles, builds DST-aware London and New York
+opening ranges, follows the H1 regime, confirms M15 breakouts, calculates an
+ATR stop and fixed-R target, rejects unaffordable minimum-lot trades, limits
+daily activity and losses, and records cost-adjusted results. MT5 submission
+and emergency closing exist behind three independent safety flags.
 
-## First workflow
+No strategy is assumed profitable. Real Exness history must pass the validation
+gate before demo-forward trading; demo must pass before any live activation.
 
-1. Export broker-quality XAUUSD OHLC data with closed candles.
-2. Run: python -m bot.main --mode backtest --data data/XAUUSD_M15.csv
-3. Inspect trade count, expectancy, drawdown, and regime stability.
-4. Add realistic spread, slippage, and commission modelling before comparing variants.
-5. Only after validation, implement and test MT5 order submission on demo.
+## Strategy package
 
-## Design rules
+- Instrument: XAUUSD (the configured MT5 symbol or suffix)
+- Signal timeframe: M15
+- Regime: H1 EMA 20/50
+- Sessions: London 08:00 and New York 08:30 local time, DST-aware
+- Trigger: confirmed close outside the first 60-minute range
+- Confirmations: displacement, BOS, FVG/IFVG, or liquidity sweep score
+- Initial stop: 1.25 ATR
+- Target: 1.75R
+- Break-even management: 1R
+- Time stop: 16 M15 bars (4 hours)
+- Limit: 2 trades/day; stop after 3 consecutive losses or 1% daily loss
+- Risk: 0.25% of equity per trade
 
-- No browser automation or DOM selectors.
-- No martingale or loss-chasing.
-- Price action defines the event; EMA and ATR measure regime and volatility.
-- Risk is sized from stop distance, not from a fixed stake.
-- Every live action must pass an explicit safety gate.
+## Commands
+
+```bash
+python -m bot.main --mode backtest --data data/XAUUSD_M15.csv
+python -m bot.main --mode validate --data data/XAUUSD_M15.csv
+python -m bot.main --mode signal --data data/XAUUSD_M15.csv
+```
+
+The CSV timestamps must be UTC and columns must include
+`time,open,high,low,close`. Backtests include configurable spread and slippage.
+
+## Validation gate
+
+The untouched last 30% of history must have at least 50 trades, positive
+expectancy, profit factor of at least 1.20, at least 80% profitable bootstrap
+samples, and 95th-percentile Monte Carlo drawdown no worse than 10R. These are
+minimum research gates, not a profit guarantee.
+
+## Safety
+
+- No DOM/browser automation
+- No martingale or averaging down
+- No forced minimum-lot trade when account risk is too small
+- No credentials in Git
+- Live submission requires `LIVE_TRADING=true`,
+  `ENABLE_ORDER_SUBMISSION=true`, and `VALIDATION_PASSED=true`
+
