@@ -12,7 +12,8 @@ def sample_frame(days=8):
 
 def test_strategy_builds_required_features():
     data = indicators(sample_frame(), Settings())
-    required = {"atr", "trend_fast", "trend_slow", "opening_high", "opening_low",
+    required = {"atr", "trend_fast", "trend_slow", "h4_fast", "h4_slow",
+                "donchian_high", "donchian_low", "opening_high", "opening_low",
                 "bull_fvg", "bear_fvg", "bull_ifvg", "bear_ifvg", "bull_bos", "bear_bos"}
     assert required <= set(data.columns)
 
@@ -22,4 +23,3 @@ def test_signals_are_discrete_and_session_bound():
     data = signals.attrs["data"]
     assert set(signals.unique()) <= {-1, 0, 1}
     assert (data.loc[signals.ne(0), "session"] != "").all()
-
