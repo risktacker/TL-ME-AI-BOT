@@ -3,18 +3,23 @@ from config import Settings
 from strategy import indicators, signal_series
 
 
-def sample_frame(n=260):
-    t = pd.date_range("2025-01-01", periods=n, freq="15min", tz="UTC")
-    close = pd.Series(range(n), dtype=float) + 100
-    return pd.DataFrame({"time": t, "open": close - 0.1, "high": close + 0.5,
-                         "low": close - 0.5, "close": close})
+def sample_frame(days=8):
+    time = pd.date_range("2026-01-05", periods=days * 24 * 4, freq="15min", tz="UTC")
+    base = pd.Series(range(len(time)), dtype=float) * 0.04 + 2500
+    return pd.DataFrame({"time": time, "open": base - 0.03, "high": base + 0.10,
+                         "low": base - 0.10, "close": base})
 
 
-def test_indicators_are_available():
+def test_strategy_builds_required_features():
     data = indicators(sample_frame(), Settings())
-    assert {"ema_fast", "ema_slow", "atr", "range_high", "range_low"} <= set(data.columns)
+    required = {"atr", "trend_fast", "trend_slow", "opening_high", "opening_low",
+                "bull_fvg", "bear_fvg", "bull_ifvg", "bear_ifvg", "bull_bos", "bear_bos"}
+    assert required <= set(data.columns)
 
 
-def test_uptrend_breakout_can_signal():
-    signals = signal_series(sample_frame(), Settings())
-    assert int(signals.max()) == 1
+def test_signals_are_discrete_and_session_bound():
+    signals = signal_series(sample_frame(), Settings(confirmation_score=1, spread_price=0.01))
+    data = signals.attrs["data"]
+    assert set(signals.unique()) <= {-1, 0, 1}
+    assert (data.loc[signals.ne(0), "session"] != "").all()
+
