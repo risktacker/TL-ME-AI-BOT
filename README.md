@@ -1,14 +1,13 @@
 # TL-ME-AI-BOT
 
-Focused Exness/MT5 XAUUSD intraday engine. The default package combines an
-opening-range breakout, higher-timeframe trend, momentum/volatility filters,
-and objective FVG/IFVG/BOS/liquidity features. It targets fast session trades,
-not swings.
+Focused Exness/MT5 XAUUSD intraday engine. The default package uses a 20-bar
+Donchian breakout with aligned H1/H4 trend, displacement and volatility
+confirmation. It targets fast session trades, not swings.
 
 ## Capability
 
-The engine reads closed MT5 candles, builds DST-aware London and New York
-opening ranges, follows the H1 regime, confirms M15 breakouts, calculates an
+The engine reads closed MT5 candles, follows aligned H1/H4 regimes, confirms
+M15 momentum breakouts, calculates an
 ATR stop and fixed-R target, rejects unaffordable minimum-lot trades, limits
 daily activity and losses, and records cost-adjusted results. MT5 submission
 and emergency closing exist behind three independent safety flags.
@@ -20,15 +19,14 @@ gate before demo-forward trading; demo must pass before any live activation.
 
 - Instrument: XAUUSD (the configured MT5 symbol or suffix)
 - Signal timeframe: M15
-- Regime: H1 EMA 20/50
-- Sessions: London 08:00 and New York 08:30 local time, DST-aware
-- Trigger: confirmed close outside the first 60-minute range
-- Confirmations: displacement, BOS, FVG/IFVG, or liquidity sweep score
-- Initial stop: 1.25 ATR
+- Regime: aligned H1 EMA 20/50 and H4 EMA 12/30
+- Active window: 06:00-16:59 UTC
+- Trigger: close outside the previous 20-bar Donchian channel
+- Confirmation: candle body of at least 0.40 ATR and normal volatility
+- Initial stop: 1.50 ATR
 - Target: 1.75R
-- Break-even management: 1R
-- Time stop: 16 M15 bars (4 hours)
-- Limit: 2 trades/day; stop after 3 consecutive losses or 1% daily loss
+- Time stop: 12 M15 bars (3 hours)
+- Limit: 1 trade/day; stop after 3 consecutive losses or 1% daily loss
 - Risk: 0.25% of equity per trade
 
 ## Commands
