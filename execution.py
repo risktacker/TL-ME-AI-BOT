@@ -1,3 +1,5 @@
-"""Explicit live-execution placeholder, locked until validation passes."""
-from core.trade_executor import TradeExecutor, LiveExecutor
-__all__ = ["TradeExecutor", "LiveExecutor"]
+"""Public execution API."""
+from core.trade_executor import LiveExecutor, TradeExecutor, TradePlan
+
+__all__ = ["TradeExecutor", "LiveExecutor", "TradePlan"]
+
