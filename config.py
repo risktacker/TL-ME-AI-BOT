@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:  # Optional for research/CI; Windows deployment installs it.
+    def load_dotenv() -> bool:
+        return False
 
 load_dotenv()
 
@@ -16,6 +20,9 @@ def _bool(name: str, default: bool = False) -> bool:
 class Settings:
     symbol: str = "XAUUSD"
     symbols: tuple[str, ...] = ("EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "XAUUSD")
+    # Only independently validated markets may submit orders. The wider list is
+    # retained for research/data acquisition and can be promoted deliberately.
+    qualified_symbols: tuple[str, ...] = ("XAUUSD",)
     timeframe: str = "M15"
     strategy_name: str = "donchian_mtf_momentum"
 
@@ -75,9 +82,13 @@ class Settings:
     def from_env(cls) -> "Settings":
         symbols = tuple(item.strip().upper() for item in
                         os.getenv("BOT_SYMBOLS", ",".join(cls.symbols)).split(",") if item.strip())
+        qualified = tuple(item.strip().upper() for item in
+                          os.getenv("BOT_QUALIFIED_SYMBOLS", ",".join(cls.qualified_symbols)).split(",")
+                          if item.strip())
         return cls(
             symbol=os.getenv("BOT_SYMBOL", cls.symbol),
             symbols=symbols or cls.symbols,
+            qualified_symbols=qualified,
             strategy_name=os.getenv("BOT_STRATEGY", cls.strategy_name),
             risk_per_trade_pct=float(os.getenv("RISK_PER_TRADE_PCT", cls.risk_per_trade_pct)),
             max_daily_loss_pct=float(os.getenv("MAX_DAILY_LOSS_PCT", cls.max_daily_loss_pct)),

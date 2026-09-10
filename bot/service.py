@@ -30,6 +30,7 @@ class DemoService:
         self.store = store or RuntimeStore()
         self.executor = TradeExecutor(settings, self.gateway)
         self.symbols: list[str] = []
+        self.research_only_symbols: list[str] = []
         self.symbol_errors: dict[str, str] = {}
 
     def _publish_position(self) -> None:
@@ -132,13 +133,17 @@ class DemoService:
         self.gateway.connect()
         try:
             for requested in self.settings.symbols:
+                if requested.upper() not in self.settings.qualified_symbols:
+                    self.research_only_symbols.append(requested)
+                    logging.info("research-only symbol=%s reason=not independently validated", requested)
+                    continue
                 try:
                     self.symbols.append(self.gateway.resolve_symbol(requested))
                 except Exception as exc:
                     self.symbol_errors[requested] = str(exc)
                     logging.warning("unavailable requested_symbol=%s error=%s", requested, exc)
             if not self.symbols:
-                raise RuntimeError("None of the configured markets could be resolved in MT5")
+                raise RuntimeError("None of the independently validated markets could be resolved in MT5")
             while True:
                 try:
                     status = self.cycle()
