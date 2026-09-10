@@ -62,7 +62,25 @@ def acquire_and_validate(gateway: MT5Gateway, settings: Settings, output_dir: Pa
                          now: datetime | None = None) -> dict[str, Any]:
     acquisition = acquire_exness_history(gateway, settings, output_dir, days, now)
     frame = pd.read_csv(acquisition["files"]["M15"], parse_dates=["time"])
-    report = _json_safe(asdict(validate_strategy(frame, settings)))
+    metadata = json.loads(Path(acquisition["metadata"]).read_text(encoding="utf-8"))
+    specification = metadata["symbol_specification"]
+    point_price = float(specification["point"])
+    recorded_spread = (float(frame["spread"].dropna().median()) * point_price
+                       if "spread" in frame and not frame["spread"].dropna().empty
+                       else settings.spread_price)
+    # Use broker-native units for every market. One-way slippage is modelled as
+    # 25% of its recorded median spread and doubled by the stress test.
+    validation_settings = replace(
+        settings, symbol=acquisition["symbol"], point_price=point_price,
+        spread_price=recorded_spread, slippage_price=recorded_spread * 0.25,
+    )
+    report = _json_safe(asdict(validate_strategy(frame, validation_settings)))
+    report["execution_assumptions"] = {
+        "point_price": point_price,
+        "median_spread_price": recorded_spread,
+        "one_way_slippage_price": recorded_spread * 0.25,
+        "source": "broker_metadata_and_recorded_m15_spread",
+    }
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / f'{acquisition["symbol"]}_validation.json'
     payload = {"acquisition": acquisition, "validation": report}
