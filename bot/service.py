@@ -75,6 +75,7 @@ class DemoService:
 
         candidates = []
         latest_bars = {}
+        scan_results = {}
         for symbol in self.symbols:
             try:
                 symbol_settings = replace(self.settings, symbol=symbol)
@@ -86,9 +87,18 @@ class DemoService:
                 signal["spread"] = float(rates.iloc[-1].get("spread", 0))
                 if signal["signal"]:
                     candidates.append((float(signal["edge_score"]), symbol, signal))
+                    scan_results[symbol] = {"status": "candidate", "side": signal["side"],
+                                            "edge_score": float(signal["edge_score"]), "bar": bar}
+                else:
+                    scan_results[symbol] = {"status": "no_signal", "bar": bar}
             except Exception as exc:
                 self.symbol_errors[symbol] = str(exc)
+                scan_results[symbol] = {"status": "error", "error": str(exc)}
                 logging.warning("scanner skipped symbol=%s error=%s", symbol, exc)
+        for symbol, outcome in scan_results.items():
+            logging.info("scan symbol=%s outcome=%s", symbol, outcome)
+        self.store.write("scanner", {"results": scan_results,
+                                     "updated_at": datetime.now(timezone.utc).isoformat()})
         service = self.store.read("service", {})
         if service.get("last_processed_bars") == latest_bars: return "already_processed"
         self.store.write("service", {**service, "last_processed_bars": latest_bars,
@@ -108,14 +118,14 @@ class DemoService:
         tick = self.gateway.symbol_info(symbol)
         decision = approve_trade(float(account["equity"]), RiskState(**risk_raw), self.settings.stop_atr * atr, self.settings)
         if not decision.allowed:
-            self.store.event("risk_rejected", reason=decision.reason, bar=bar)
+            self.store.event("risk_rejected", symbol=symbol, reason=decision.reason, bar=bar)
             return decision.reason
         volume = volume_for_profile(float(account["equity"]), decision.stop_distance,
                                     float(tick.trade_tick_size), float(tick.trade_tick_value),
                                     float(tick.volume_step), float(tick.volume_min), float(tick.volume_max),
                                     self.settings)
         if not volume.allowed:
-            self.store.event("size_rejected", reason=volume.reason, estimated_risk=volume.estimated_risk)
+            self.store.event("size_rejected", symbol=symbol, reason=volume.reason, estimated_risk=volume.estimated_risk)
             return volume.reason
         quote = self.gateway.current_tick(symbol)
         price = float(quote.ask if signal["signal"] == 1 else quote.bid)
