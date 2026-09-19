@@ -117,7 +117,7 @@ class TradeExecutor:
             "price": tick.bid if side == mt5.ORDER_TYPE_SELL else tick.ask,
             "deviation": 30, "magic": self.settings.magic_number, "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": self.gateway.symbol_info(position.symbol).filling_mode,
+            "type_filling": self._filling_type(self.gateway.symbol_info(position.symbol)),
         }
         result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
