@@ -24,6 +24,25 @@ class TradeExecutor:
     settings: Settings
     gateway: MT5Gateway
 
+    @staticmethod
+    def _filling_type(info: Any) -> int:
+        """Translate SYMBOL_FILLING_* capability flags to ORDER_FILLING_* enum."""
+        mode = int(info.filling_mode)
+        choices = (
+            ("SYMBOL_FILLING_IOC", "ORDER_FILLING_IOC"),
+            ("SYMBOL_FILLING_FOK", "ORDER_FILLING_FOK"),
+            ("SYMBOL_FILLING_RETURN", "ORDER_FILLING_RETURN"),
+        )
+        for capability_name, order_name in choices:
+            capability = getattr(mt5, capability_name, None)
+            order_type = getattr(mt5, order_name, None)
+            if capability is not None and order_type is not None and mode & int(capability):
+                return int(order_type)
+        # Some brokers expose zero for FOK-only symbols.
+        if mode == 0 and hasattr(mt5, "ORDER_FILLING_FOK"):
+            return int(mt5.ORDER_FILLING_FOK)
+        raise RuntimeError(f"No supported MT5 filling policy for symbol (filling_mode={mode})")
+
     def _assert_unlocked(self) -> None:
         mode = self.settings.execution_mode
         if mode not in {"demo", "live"}:
@@ -57,7 +76,7 @@ class TradeExecutor:
             "price": round(price, int(info.digits)), "sl": round(plan.stop_loss, int(info.digits)),
             "tp": round(plan.take_profit, int(info.digits)),
             "deviation": plan.deviation, "magic": plan.magic, "comment": plan.comment,
-            "type_time": mt5.ORDER_TIME_GTC, "type_filling": info.filling_mode,
+            "type_time": mt5.ORDER_TIME_GTC, "type_filling": self._filling_type(info),
         }
         checked = mt5.order_check(request)
         if checked is None or checked.retcode != 0:
@@ -80,7 +99,7 @@ class TradeExecutor:
                 "symbol": position.symbol, "volume": position.volume, "type": side,
                 "price": price, "deviation": 30, "magic": 260909,
                 "comment": "TL-ME emergency close", "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": self.gateway.symbol_info(position.symbol).filling_mode,
+                "type_filling": self._filling_type(self.gateway.symbol_info(position.symbol)),
             }
             result = mt5.order_send(request)
             if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
