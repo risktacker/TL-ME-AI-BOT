@@ -20,9 +20,8 @@ def _bool(name: str, default: bool = False) -> bool:
 class Settings:
     symbol: str = "XAUUSD"
     symbols: tuple[str, ...] = ("EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "XAUUSD")
-    # Only independently validated markets may submit orders. The wider list is
-    # retained for research/data acquisition and can be promoted deliberately.
-    qualified_symbols: tuple[str, ...] = ("XAUUSD",)
+    # Scan the complete configured market pool and rank valid setups across it.
+    qualified_symbols: tuple[str, ...] = ("EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "XAUUSD")
     timeframe: str = "M15"
     strategy_name: str = "donchian_mtf_momentum"
 
