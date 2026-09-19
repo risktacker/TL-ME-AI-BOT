@@ -1,10 +1,12 @@
 from config import Settings
 
 
-def test_production_defaults_to_independently_validated_market_only():
+def test_default_execution_pool_contains_every_configured_market():
     settings = Settings()
-    assert "XAUUSD" in settings.symbols
-    assert settings.qualified_symbols == ("XAUUSD",)
+    assert settings.qualified_symbols == settings.symbols
+    assert settings.qualified_symbols == (
+        "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "XAUUSD"
+    )
 
 
 def test_qualified_market_allowlist_can_be_explicitly_changed(monkeypatch):
