@@ -8,9 +8,11 @@ candle decision. It targets fast session trades, not swings.
 
 The research pipeline reads closed MT5 candles across the configured universe. The
 execution service follows an explicit `BOT_QUALIFIED_SYMBOLS` allowlist, so a market
-cannot become tradable merely because it is available in MT5. It then follows
-aligned H1/H4 regimes, confirms M15 momentum breakouts, calculates an ATR stop
-and fixed-R target, ranks simultaneous edges, and records cost-adjusted results. MT5 submission
+cannot become tradable merely because it is available in MT5. By default that
+allowlist contains all seven configured markets: EURUSD, GBPUSD, USDJPY, AUDUSD,
+USDCAD, USDCHF and XAUUSD. The engine follows aligned H1/H4 regimes, confirms M15
+momentum breakouts, calculates an ATR stop and fixed-R target, ranks simultaneous
+edges across the qualified pool, and records cost-adjusted results. MT5 submission
 and emergency closing exist behind three independent safety flags.
 
 The deployment runner processes completed M15 candles exactly once, refuses a
@@ -24,6 +26,8 @@ gate before demo-forward trading; demo must pass before any live activation.
 ## Strategy package
 
 - Universe: EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, USDCHF and XAUUSD by default
+- Execution pool: all seven configured markets by default; `BOT_QUALIFIED_SYMBOLS`
+  can explicitly restrict the tradable allowlist without changing the research universe
 - Signal timeframe: M15
 - Regime: aligned H1 EMA 20/50 and H4 EMA 12/30
 - Active window: 06:00-16:59 UTC
@@ -33,8 +37,7 @@ gate before demo-forward trading; demo must pass before any live activation.
 - Target: 1.75R
 - Time stop: 12 M15 bars (3 hours)
 - Signal rearm: first qualified breakout per symbol/day; other symbols keep scanning
-- Production qualification: `XAUUSD` only; the six FX pairs remain research-only
-  after failing positive-expectancy and walk-forward requirements on the supplied year
+- Candidate selection: rank simultaneous valid setups and act on the strongest edge
 - Micro mode: 0.01 volume per configured $10 equity step below the scaling threshold
 - Scaling mode: proportional broker-aware sizing above the threshold
 - No daily-loss or consecutive-loss shutdown in `micro_aggressive` mode
