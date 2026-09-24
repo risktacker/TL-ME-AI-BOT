@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from math import isfinite
+from pathlib import Path
 import pandas as pd
 
 try:
@@ -178,3 +179,22 @@ class MT5Gateway:
             "volume_min": float(info.volume_min), "volume_max": float(info.volume_max),
             "volume_step": float(info.volume_step),
         }
+
+    def fast_manager_heartbeat(self, magic: int, max_age_seconds: float = 3.0) -> dict[str, Any]:
+        """Fail closed unless the demo-only MQL5 manager is actively ticking."""
+        terminal = mt5.terminal_info() if mt5 else None
+        account = mt5.account_info() if mt5 else None
+        if terminal is None or account is None:
+            return {"ready": False, "reason": "terminal_or_account_unavailable"}
+        path = (Path(str(terminal.commondata_path)) / "Files" / "GOLIDE" /
+                "fast_manager_heartbeat.csv")
+        try:
+            timestamp, login, heartbeat_magic = path.read_text(encoding="ascii").strip().split(",")
+            age = datetime.now(timezone.utc).timestamp() - float(timestamp)
+        except (OSError, ValueError):
+            return {"ready": False, "reason": "heartbeat_missing_or_invalid"}
+        if int(login) != int(account.login) or int(heartbeat_magic) != int(magic):
+            return {"ready": False, "reason": "heartbeat_identity_mismatch"}
+        if age < -2 or age > max_age_seconds:
+            return {"ready": False, "reason": "heartbeat_stale", "age_seconds": age}
+        return {"ready": True, "reason": "active", "age_seconds": age}
