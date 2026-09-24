@@ -15,10 +15,12 @@ momentum breakouts, calculates an ATR stop and fixed-R target, ranks simultaneou
 edges across the qualified pool, and records cost-adjusted results. MT5 submission
 and emergency closing exist behind three independent safety flags.
 
-The deployment runner processes completed M15 candles exactly once, refuses a
-non-demo account in demo mode, prevents duplicate positions, sizes from broker
-contract specifications, places broker-side stop-loss/take-profit exits, and
-enforces the same three-hour time exit used by the backtest.
+The baseline deployment runner processes completed M15 candles exactly once,
+refuses a non-demo account in demo mode, prevents duplicate positions, sizes
+from broker contract specifications, places broker-side stop-loss/take-profit
+exits, and enforces the same three-hour time exit used by the backtest. The
+separate demo-forward profile replaces that passive lifecycle with the
+tick-driven `GolideFastManager` while leaving the baseline and live lock intact.
 
 No strategy is assumed profitable. Real Exness history must pass the validation
 gate before demo-forward trading; demo must pass before any live activation.
@@ -41,6 +43,31 @@ gate before demo-forward trading; demo must pass before any live activation.
 - Micro mode: 0.01 volume per configured $10 equity step below the scaling threshold
 - Scaling mode: proportional broker-aware sizing above the threshold
 - No daily-loss or consecutive-loss shutdown in `micro_aggressive` mode
+
+## Fast demo-forward profile
+
+`experiments/demo_fast_forward.env` is the explicit $20 Standard-account test
+profile. It holds volume at 0.01, scans all seven markets, can submit independent
+same-bar candidates, and rearms only after price returns inside the breakout
+channel. It does not set `VALIDATION_PASSED` and cannot unlock live trading.
+
+`mt5/GolideFastManager.mq5` manages every GOLIDE position from one chart on a
+200 ms timer. It closes failed breakouts, exits trades that make no early
+progress, banks stalled positive movement, moves the stop into profit, and
+ratchets behind favorable movement. Python refuses new fast-profile orders when
+the EA heartbeat is missing or stale, so a stopped EA cannot leave Python
+submitting positions under the passive lifecycle.
+
+On the Windows MT5 computer, install/compile the manager with:
+
+```powershell
+py -m scripts.install_fast_manager
+```
+
+Then refresh MT5 Navigator, attach `GOLIDE/GolideFastManager` to exactly one
+chart with `InpDemoOnly=true`, and enable Algo Trading. Copy the demo profile to
+`.env` only for the dedicated demo account. Friday testing should stay inside
+the existing 06:00-16:59 UTC strategy window; do not test into the market close.
 
 ## Commands
 
