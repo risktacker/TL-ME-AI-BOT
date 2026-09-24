@@ -47,13 +47,19 @@ class TradeExecutor:
         mode = self.settings.execution_mode
         if mode not in {"demo", "live"}:
             raise PermissionError("Execution is disabled")
-        if not (self.settings.enable_order_submission and self.settings.validation_passed):
-            raise PermissionError("Submission requires ENABLE_ORDER_SUBMISSION and VALIDATION_PASSED")
+        if not self.settings.enable_order_submission:
+            raise PermissionError("Submission requires ENABLE_ORDER_SUBMISSION")
         account = self.gateway.account_snapshot()
-        if mode == "demo" and account["trade_mode"] != 0:
-            raise PermissionError("Demo mode refuses a non-demo MT5 account")
-        if mode == "live" and (not self.settings.live_trading or account["trade_mode"] == 0):
-            raise PermissionError("Live mode requires LIVE_TRADING and a non-demo MT5 account")
+        if mode == "demo":
+            if account["trade_mode"] != 0:
+                raise PermissionError("Demo mode refuses a non-demo MT5 account")
+            if not (self.settings.validation_passed or self.settings.demo_forward_enabled):
+                raise PermissionError("Demo submission requires validation or DEMO_FORWARD_ENABLED")
+        if mode == "live":
+            if not (self.settings.live_trading and self.settings.validation_passed):
+                raise PermissionError("Live mode requires LIVE_TRADING and VALIDATION_PASSED")
+            if account["trade_mode"] == 0:
+                raise PermissionError("Live mode refuses a demo MT5 account")
         if mt5 is None:
             raise RuntimeError("MetaTrader5 package is not installed")
 
