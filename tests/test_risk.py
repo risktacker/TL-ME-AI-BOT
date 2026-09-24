@@ -1,5 +1,7 @@
 from config import Settings
 from risk.risk_engine import RiskState, approve_trade, volume_for_profile, volume_from_risk
+from bot.service import DemoService
+from core.journal import RuntimeStore
 
 
 def test_daily_loss_gate():
@@ -47,9 +49,21 @@ def test_micro_volume_compounds_in_broker_steps():
     assert decision.estimated_risk == 3.0
 
 
-def test_micro_fixed_stays_at_point_zero_one_on_twenty_dollars():
-    decision = volume_for_profile(20, 1, 0.01, 1, 0.01, 0.01, 100,
-                                  Settings(risk_profile="micro_fixed"))
+def test_micro_compound_starts_at_point_zero_one_and_scales_with_equity():
+    settings = Settings(risk_profile="micro_compound", micro_equity_per_step=20)
+    decision = volume_for_profile(20, 1, 0.01, 1, 0.01, 0.01, 100, settings)
     assert decision.allowed
     assert decision.volume == 0.01
     assert decision.estimated_risk == 1.0
+    grown = volume_for_profile(40, 1, 0.01, 1, 0.01, 0.01, 100, settings)
+    assert grown.volume == 0.02
+
+
+def test_micro_compound_captures_the_users_selected_account_balance(tmp_path):
+    settings = Settings(risk_profile="micro_compound", micro_equity_per_step=0)
+    service = DemoService(settings, gateway=object(), store=RuntimeStore(tmp_path))
+    resolved = service._sizing_settings({"login": 123, "balance": 20})
+    assert resolved.micro_equity_per_step == 20
+    # The same account keeps its chosen baseline rather than resetting after growth.
+    resolved = service._sizing_settings({"login": 123, "balance": 27})
+    assert resolved.micro_equity_per_step == 20
