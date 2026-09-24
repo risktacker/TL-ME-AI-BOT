@@ -47,19 +47,40 @@ class DemoService:
                          "running_pnl": sum(item["running_pnl"] for item in items),
                          "items": items, **items[0]})
 
+    def _sizing_settings(self, account: dict) -> Settings:
+        if self.settings.risk_profile != "micro_compound":
+            return self.settings
+        configured = float(self.settings.micro_equity_per_step)
+        if configured > 0:
+            return self.settings
+        login = int(account["login"])
+        state = self.store.read("sizing", {})
+        base = float(state.get("starting_balance", 0)) if state.get("login") == login else 0.0
+        if base <= 0:
+            base = float(account["balance"])
+            if base <= 0:
+                raise RuntimeError("Cannot capture a positive starting balance for compounding")
+            self.store.write("sizing", {"login": login, "starting_balance": base,
+                                        "volume_per_step": self.settings.micro_volume,
+                                        "captured_at": datetime.now(timezone.utc).isoformat()})
+            self.store.event("compounding_baseline_captured", login=login,
+                             starting_balance=base, volume=self.settings.micro_volume)
+        return replace(self.settings, micro_equity_per_step=base)
+
     def _submit_candidate(self, account: dict, symbol: str, signal: dict, bar: str) -> str:
+        sizing_settings = self._sizing_settings(account)
         atr = float(signal["atr"])
         tick = self.gateway.symbol_info(symbol)
         decision = approve_trade(float(account["equity"]),
                                  RiskState(**self.gateway.risk_state_today(self.settings.magic_number)),
-                                 self.settings.stop_atr * atr, self.settings)
+                                 self.settings.stop_atr * atr, sizing_settings)
         if not decision.allowed:
             self.store.event("risk_rejected", symbol=symbol, reason=decision.reason, bar=bar)
             return decision.reason
         volume = volume_for_profile(float(account["equity"]), decision.stop_distance,
                                     float(tick.trade_tick_size), float(tick.trade_tick_value),
                                     float(tick.volume_step), float(tick.volume_min), float(tick.volume_max),
-                                    self.settings)
+                                    sizing_settings)
         if not volume.allowed:
             self.store.event("size_rejected", symbol=symbol, reason=volume.reason,
                              estimated_risk=volume.estimated_risk)
