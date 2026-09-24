@@ -36,14 +36,62 @@ class DemoService:
     def _publish_position(self) -> None:
         positions = self.gateway.positions(magic=self.settings.magic_number)
         if not positions:
-            self.store.write("position", {"open": False})
+            self.store.write("position", {"open": False, "items": []})
             return
-        position = positions[0]
-        self.store.write("position", {"open": True, "ticket": int(position.ticket),
-                         "side": "buy" if int(position.type) == 0 else "sell",
-                         "entry": float(position.price_open), "stop": float(position.sl),
-                         "target": float(position.tp), "volume": float(position.volume),
-                         "running_pnl": float(position.profit)})
+        items = [{"ticket": int(position.ticket), "symbol": str(position.symbol),
+                  "side": "buy" if int(position.type) == 0 else "sell",
+                  "entry": float(position.price_open), "stop": float(position.sl),
+                  "target": float(position.tp), "volume": float(position.volume),
+                  "running_pnl": float(position.profit)} for position in positions]
+        self.store.write("position", {"open": True, "count": len(items),
+                         "running_pnl": sum(item["running_pnl"] for item in items),
+                         "items": items, **items[0]})
+
+    def _submit_candidate(self, account: dict, symbol: str, signal: dict, bar: str) -> str:
+        atr = float(signal["atr"])
+        tick = self.gateway.symbol_info(symbol)
+        decision = approve_trade(float(account["equity"]),
+                                 RiskState(**self.gateway.risk_state_today(self.settings.magic_number)),
+                                 self.settings.stop_atr * atr, self.settings)
+        if not decision.allowed:
+            self.store.event("risk_rejected", symbol=symbol, reason=decision.reason, bar=bar)
+            return decision.reason
+        volume = volume_for_profile(float(account["equity"]), decision.stop_distance,
+                                    float(tick.trade_tick_size), float(tick.trade_tick_value),
+                                    float(tick.volume_step), float(tick.volume_min), float(tick.volume_max),
+                                    self.settings)
+        if not volume.allowed:
+            self.store.event("size_rejected", symbol=symbol, reason=volume.reason,
+                             estimated_risk=volume.estimated_risk)
+            return volume.reason
+        quote = self.gateway.current_tick(symbol)
+        current_spread = float(quote.ask) - float(quote.bid)
+        if not (0 <= current_spread <= self.settings.max_spread_atr * atr):
+            self.store.event("risk_rejected", symbol=symbol,
+                             reason="current_spread_exceeds_limit", bar=bar)
+            return "current_spread_exceeds_limit"
+        price = float(quote.ask if signal["signal"] == 1 else quote.bid)
+        stop = price - decision.stop_distance if signal["signal"] == 1 else price + decision.stop_distance
+        target = (price + self.settings.target_r * decision.stop_distance if signal["signal"] == 1
+                  else price - self.settings.target_r * decision.stop_distance)
+        estimated_stop_loss = self.gateway.stop_exposure(
+            symbol, int(signal["signal"]), volume.volume, price, stop)
+        if (self.settings.max_stop_risk_pct > 0 and
+                estimated_stop_loss > float(account["equity"]) * self.settings.max_stop_risk_pct):
+            self.store.event("risk_rejected", symbol=symbol, reason="broker_stop_exceeds_risk",
+                             estimated_stop_loss=estimated_stop_loss)
+            return "broker_stop_exceeds_risk"
+        level = float(signal["breakout_level"])
+        comment = (f"G|{'B' if signal['signal'] == 1 else 'S'}|"
+                   f"{level:.8g}|{decision.stop_distance:.8g}")
+        result = self.executor.submit(TradePlan(
+            symbol, signal["signal"], volume.volume, stop, target,
+            magic=self.settings.magic_number, comment=comment))
+        self.store.event("order_submitted", order=int(result.order), deal=int(result.deal), bar=bar,
+                         symbol=symbol, side=signal["side"], volume=volume.volume,
+                         edge_score=signal["edge_score"], estimated_stop_loss=estimated_stop_loss,
+                         breakout_level=level)
+        return "submitted"
 
     def cycle(self) -> str:
         control = self.store.read("control", {"mode": "locked", "paused": True})
@@ -64,7 +112,7 @@ class DemoService:
         if not terminal["connected"] or not terminal["trade_allowed"] or terminal["tradeapi_disabled"]:
             raise RuntimeError("MT5 terminal is not ready for automated trading")
         positions = self.gateway.positions(magic=self.settings.magic_number)
-        if positions:
+        if positions and not self.settings.fast_manager_enabled:
             maximum_seconds = self.settings.max_holding_bars * 15 * 60
             now_ts = datetime.now(timezone.utc).timestamp()
             expired = [position for position in positions if now_ts - float(position.time) >= maximum_seconds]
@@ -72,11 +120,15 @@ class DemoService:
                 self.executor.close_position(position)
                 self.store.event("time_exit", ticket=int(position.ticket), symbol=str(position.symbol))
             return "time_exit" if expired else "position_open"
+        open_symbols = {str(position.symbol) for position in positions}
 
         candidates = []
         latest_bars = {}
         scan_results = {}
         for symbol in self.symbols:
+            if symbol in open_symbols:
+                scan_results[symbol] = {"status": "position_open"}
+                continue
             try:
                 info = self.gateway.symbol_info(symbol)
                 point = float(info.point)
@@ -113,43 +165,23 @@ class DemoService:
                                         "edge_score": 0, "scanned": len(latest_bars),
                                         "unavailable": len(self.symbol_errors), "session": "scanner"})
             return "no_signal"
-        _, symbol, signal = max(candidates, key=lambda candidate: candidate[0])
-        bar = latest_bars[symbol]
-        self.store.write("market", {**signal, "signal": signal["side"],
-                                    "signal_reason": "highest-ranked closed M15 edge",
-                                    "scanned": len(self.symbols), "candidates": len(candidates)})
-        atr = float(signal["atr"])
-        tick = self.gateway.symbol_info(symbol)
-        decision = approve_trade(float(account["equity"]), RiskState(**risk_raw), self.settings.stop_atr * atr, self.settings)
-        if not decision.allowed:
-            self.store.event("risk_rejected", symbol=symbol, reason=decision.reason, bar=bar)
-            return decision.reason
-        volume = volume_for_profile(float(account["equity"]), decision.stop_distance,
-                                    float(tick.trade_tick_size), float(tick.trade_tick_value),
-                                    float(tick.volume_step), float(tick.volume_min), float(tick.volume_max),
-                                    self.settings)
-        if not volume.allowed:
-            self.store.event("size_rejected", symbol=symbol, reason=volume.reason, estimated_risk=volume.estimated_risk)
-            return volume.reason
-        quote = self.gateway.current_tick(symbol)
-        # The closed-candle filter cannot see a spread widening before submission.
-        current_spread = float(quote.ask) - float(quote.bid)
-        if not (0 <= current_spread <= self.settings.max_spread_atr * atr):
-            self.store.event("risk_rejected", symbol=symbol, reason="current_spread_exceeds_limit", bar=bar)
-            return "current_spread_exceeds_limit"
-        price = float(quote.ask if signal["signal"] == 1 else quote.bid)
-        stop = price - decision.stop_distance if signal["signal"] == 1 else price + decision.stop_distance
-        target = price + self.settings.target_r * decision.stop_distance if signal["signal"] == 1 else price - self.settings.target_r * decision.stop_distance
-        estimated_stop_loss = self.gateway.stop_exposure(symbol, int(signal["signal"]), volume.volume, price, stop)
-        if self.settings.max_stop_risk_pct > 0 and estimated_stop_loss > float(account["equity"]) * self.settings.max_stop_risk_pct:
-            self.store.event("risk_rejected", symbol=symbol, reason="broker_stop_exceeds_risk", estimated_stop_loss=estimated_stop_loss)
-            return "broker_stop_exceeds_risk"
-        result = self.executor.submit(TradePlan(symbol, signal["signal"], volume.volume, stop, target,
-                                                magic=self.settings.magic_number, comment="GOLIDE ranked M15"))
-        self.store.event("order_submitted", order=int(result.order), deal=int(result.deal), bar=bar,
-                         side=signal["side"], volume=volume.volume, edge_score=signal["edge_score"],
-                         estimated_stop_loss=estimated_stop_loss)
-        return "submitted"
+        if self.settings.fast_manager_enabled:
+            heartbeat = self.gateway.fast_manager_heartbeat(self.settings.magic_number)
+            if not heartbeat["ready"]:
+                self.store.event("risk_rejected", reason="fast_manager_unavailable",
+                                 detail=heartbeat["reason"])
+                return "fast_manager_unavailable"
+        ranked = sorted(candidates, reverse=True)
+        selected = ranked if self.settings.submit_all_candidates else ranked[:1]
+        best = selected[0][2]
+        self.store.write("market", {**best, "signal": best["side"],
+                                    "signal_reason": "ranked closed M15 edge",
+                                    "scanned": len(self.symbols), "candidates": len(candidates),
+                                    "selected": len(selected)})
+        outcomes = [self._submit_candidate(account, symbol, signal, latest_bars[symbol])
+                    for _, symbol, signal in selected]
+        submitted = outcomes.count("submitted")
+        return f"submitted:{submitted}" if submitted else outcomes[0]
 
     def run_forever(self) -> None:
         configure_logging()
