@@ -34,6 +34,9 @@ class Settings:
     micro_balance_ceiling: float = 1000.0
     micro_equity_per_step: float = 10.0
     micro_volume: float = 0.01
+    # Optional structural stop-risk ceiling. Zero preserves the legacy profile;
+    # demo research presets should set this explicitly. Not a loss-streak lock.
+    max_stop_risk_pct: float = 0.0
 
     # Regime and volatility measurement.
     trend_fast_ema: int = 20
@@ -97,6 +100,7 @@ class Settings:
             micro_balance_ceiling=float(os.getenv("MICRO_BALANCE_CEILING", cls.micro_balance_ceiling)),
             micro_equity_per_step=float(os.getenv("MICRO_EQUITY_PER_STEP", cls.micro_equity_per_step)),
             micro_volume=float(os.getenv("MICRO_VOLUME", cls.micro_volume)),
+            max_stop_risk_pct=float(os.getenv("MAX_STOP_RISK_PCT", cls.max_stop_risk_pct)),
             minimum_edge_score=float(os.getenv("MINIMUM_EDGE_SCORE", cls.minimum_edge_score)),
             spread_price=float(os.getenv("BACKTEST_SPREAD_PRICE", cls.spread_price)),
             slippage_price=float(os.getenv("BACKTEST_SLIPPAGE_PRICE", cls.slippage_price)),

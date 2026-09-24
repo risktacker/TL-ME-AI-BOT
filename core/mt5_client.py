@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from math import isfinite
 import pandas as pd
 
 try:
@@ -125,6 +126,17 @@ class MT5Gateway:
         if tick is None:
             raise RuntimeError(f"No current tick for {symbol}")
         return tick
+
+    def stop_exposure(self, symbol: str, side: int, volume: float,
+                      entry: float, stop: float) -> float:
+        """Broker-native account-currency loss; excludes gaps and commissions."""
+        if mt5 is None:
+            raise RuntimeError("MetaTrader5 package is not installed")
+        kind = mt5.ORDER_TYPE_BUY if side == 1 else mt5.ORDER_TYPE_SELL
+        value = mt5.order_calc_profit(kind, symbol, volume, entry, stop)
+        if value is None or not isfinite(float(value)) or value >= 0:
+            raise RuntimeError("Cannot determine broker-native stop exposure")
+        return -float(value)
 
     def recent_closed_deals(self, magic: int, limit: int = 10) -> list[dict[str, Any]]:
         now = datetime.now(timezone.utc)

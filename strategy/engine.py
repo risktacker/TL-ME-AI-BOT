@@ -71,8 +71,11 @@ def signal_series(frame: pd.DataFrame, settings: Settings) -> pd.Series:
     fired = raw.ne(0)
     prior_today = fired.groupby(data["time"].dt.strftime("%Y-%m-%d")).cumsum() - fired.astype(int)
     raw.loc[fired & prior_today.gt(0)] = 0
-    scores = pd.Series((_edge_score(data.iloc[index], int(raw.iloc[index]))
-                        for index in range(len(data))), index=data.index, dtype=float)
+    # Flat bars have zero score by definition; avoid constructing thousands of
+    # pandas rows on every scanner cycle. Entry and ranking semantics unchanged.
+    scores = pd.Series(0.0, index=data.index)
+    for index in raw.index[raw.ne(0)]:
+        scores.loc[index] = _edge_score(data.loc[index], int(raw.loc[index]))
     raw.loc[raw.ne(0) & scores.lt(settings.minimum_edge_score)] = 0
     raw.attrs["edge_scores"] = scores
     raw.attrs["data"] = data

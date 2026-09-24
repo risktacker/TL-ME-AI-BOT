@@ -78,7 +78,11 @@ class DemoService:
         scan_results = {}
         for symbol in self.symbols:
             try:
-                symbol_settings = replace(self.settings, symbol=symbol)
+                info = self.gateway.symbol_info(symbol)
+                point = float(info.point)
+                if not point > 0:
+                    raise ValueError("Invalid broker point size")
+                symbol_settings = replace(self.settings, symbol=symbol, point_price=point)
                 rates = self.gateway.latest_rates(symbol, self.settings.timeframe, 800)
                 closed = rates.iloc[:-1].copy()
                 bar = closed.iloc[-1]["time"].isoformat()
@@ -128,14 +132,23 @@ class DemoService:
             self.store.event("size_rejected", symbol=symbol, reason=volume.reason, estimated_risk=volume.estimated_risk)
             return volume.reason
         quote = self.gateway.current_tick(symbol)
+        # The closed-candle filter cannot see a spread widening before submission.
+        current_spread = float(quote.ask) - float(quote.bid)
+        if not (0 <= current_spread <= self.settings.max_spread_atr * atr):
+            self.store.event("risk_rejected", symbol=symbol, reason="current_spread_exceeds_limit", bar=bar)
+            return "current_spread_exceeds_limit"
         price = float(quote.ask if signal["signal"] == 1 else quote.bid)
         stop = price - decision.stop_distance if signal["signal"] == 1 else price + decision.stop_distance
         target = price + self.settings.target_r * decision.stop_distance if signal["signal"] == 1 else price - self.settings.target_r * decision.stop_distance
+        estimated_stop_loss = self.gateway.stop_exposure(symbol, int(signal["signal"]), volume.volume, price, stop)
+        if self.settings.max_stop_risk_pct > 0 and estimated_stop_loss > float(account["equity"]) * self.settings.max_stop_risk_pct:
+            self.store.event("risk_rejected", symbol=symbol, reason="broker_stop_exceeds_risk", estimated_stop_loss=estimated_stop_loss)
+            return "broker_stop_exceeds_risk"
         result = self.executor.submit(TradePlan(symbol, signal["signal"], volume.volume, stop, target,
                                                 magic=self.settings.magic_number, comment="GOLIDE ranked M15"))
         self.store.event("order_submitted", order=int(result.order), deal=int(result.deal), bar=bar,
                          side=signal["side"], volume=volume.volume, edge_score=signal["edge_score"],
-                         estimated_stop_loss=volume.estimated_risk)
+                         estimated_stop_loss=estimated_stop_loss)
         return "submitted"
 
     def run_forever(self) -> None:

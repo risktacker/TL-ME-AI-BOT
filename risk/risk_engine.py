@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_DOWN
+from math import isfinite
 from config import Settings
 
 
@@ -55,14 +56,25 @@ def volume_for_profile(equity: float, stop_distance: float, tick_size: float,
                        tick_value: float, volume_step: float, min_volume: float,
                        max_volume: float, settings: Settings) -> VolumeDecision:
     """Use broker minimum volume for micro mode; proportional sizing after it."""
+    values = (equity, stop_distance, tick_size, tick_value, volume_step, min_volume, max_volume)
+    if any(not isfinite(v) or v <= 0 for v in values) or max_volume < min_volume:
+        return VolumeDecision(False, "invalid_symbol_metadata", 0.0, 0.0)
+    if not isfinite(settings.max_stop_risk_pct) or not 0 <= settings.max_stop_risk_pct <= 1:
+        return VolumeDecision(False, "invalid_stop_risk_limit", 0.0, 0.0)
     if settings.risk_profile == "micro_aggressive" and equity < settings.micro_balance_ceiling:
+        if any(not isfinite(v) or v <= 0 for v in (settings.micro_equity_per_step, settings.micro_volume)):
+            return VolumeDecision(False, "invalid_micro_settings", 0.0, 0.0)
         equity_steps = max(1, int(equity // settings.micro_equity_per_step))
         requested = max(settings.micro_volume * equity_steps, min_volume)
         steps = (Decimal(str(requested)) / Decimal(str(volume_step))).to_integral_value(rounding=ROUND_DOWN)
         volume = min(float(steps * Decimal(str(volume_step))), max_volume)
         estimated = loss_at_volume(stop_distance, tick_size, tick_value, volume)
+        if settings.max_stop_risk_pct > 0 and estimated > equity * settings.max_stop_risk_pct:
+            return volume_from_risk(equity * settings.max_stop_risk_pct, stop_distance, tick_size,
+                                    tick_value, volume_step, min_volume, max_volume)
         return VolumeDecision(volume >= min_volume, "micro_minimum_volume", round(volume, 8), estimated)
-    return volume_from_risk(equity * settings.risk_per_trade_pct, stop_distance, tick_size,
+    risk_pct = min(settings.risk_per_trade_pct, settings.max_stop_risk_pct) if settings.max_stop_risk_pct > 0 else settings.risk_per_trade_pct
+    return volume_from_risk(equity * risk_pct, stop_distance, tick_size,
                             tick_value, volume_step, min_volume, max_volume)
 
 
