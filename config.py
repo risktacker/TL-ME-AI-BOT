@@ -30,7 +30,7 @@ class Settings:
     max_daily_loss_pct: float = 0.01
     max_consecutive_losses: int = 3
     max_trades_per_day: int = 1
-    risk_profile: str = "micro_aggressive"  # micro_aggressive or proportional
+    risk_profile: str = "micro_aggressive"  # micro_fixed, micro_aggressive, or proportional
     micro_balance_ceiling: float = 1000.0
     micro_equity_per_step: float = 10.0
     micro_volume: float = 0.01
@@ -64,6 +64,10 @@ class Settings:
     target_r: float = 1.75
     max_holding_bars: int = 12
     break_even_at_r: float = 0.0
+    # Demo-forward lifecycle switches. Defaults preserve the researched baseline.
+    signal_rearm_mode: str = "daily"  # daily or reset
+    submit_all_candidates: bool = False
+    fast_manager_enabled: bool = False
 
     # Backtest execution assumptions, expressed in price units.
     spread_price: float = 0.20
@@ -75,6 +79,9 @@ class Settings:
     live_trading: bool = False
     enable_order_submission: bool = False
     validation_passed: bool = False
+    # Allows an explicitly requested demo-forward run without pretending the
+    # research validation gate passed. It can never unlock a live account.
+    demo_forward_enabled: bool = False
     execution_mode: str = "disabled"  # disabled, demo, or live
     dashboard_token: str = ""
     poll_seconds: int = 15
@@ -101,12 +108,16 @@ class Settings:
             micro_equity_per_step=float(os.getenv("MICRO_EQUITY_PER_STEP", cls.micro_equity_per_step)),
             micro_volume=float(os.getenv("MICRO_VOLUME", cls.micro_volume)),
             max_stop_risk_pct=float(os.getenv("MAX_STOP_RISK_PCT", cls.max_stop_risk_pct)),
+            signal_rearm_mode=os.getenv("SIGNAL_REARM_MODE", cls.signal_rearm_mode).strip().lower(),
+            submit_all_candidates=_bool("SUBMIT_ALL_CANDIDATES", cls.submit_all_candidates),
+            fast_manager_enabled=_bool("FAST_MANAGER_ENABLED", cls.fast_manager_enabled),
             minimum_edge_score=float(os.getenv("MINIMUM_EDGE_SCORE", cls.minimum_edge_score)),
             spread_price=float(os.getenv("BACKTEST_SPREAD_PRICE", cls.spread_price)),
             slippage_price=float(os.getenv("BACKTEST_SLIPPAGE_PRICE", cls.slippage_price)),
             live_trading=_bool("LIVE_TRADING"),
             enable_order_submission=_bool("ENABLE_ORDER_SUBMISSION"),
             validation_passed=_bool("VALIDATION_PASSED"),
+            demo_forward_enabled=_bool("DEMO_FORWARD_ENABLED"),
             execution_mode=os.getenv("EXECUTION_MODE", cls.execution_mode).strip().lower(),
             dashboard_token=os.getenv("DASHBOARD_TOKEN", ""),
             poll_seconds=int(os.getenv("POLL_SECONDS", cls.poll_seconds)),
