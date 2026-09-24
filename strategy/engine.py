@@ -66,11 +66,26 @@ def signal_series(frame: pd.DataFrame, settings: Settings) -> pd.Series:
     raw = pd.Series(0, index=data.index, dtype="int8")
     raw.loc[long_signal.fillna(False)] = 1
     raw.loc[short_signal.fillna(False)] = -1
-    # The tested edge is the first qualified breakout for this market-day. This
-    # is signal de-duplication, not a loss shutdown; other markets keep scanning.
-    fired = raw.ne(0)
-    prior_today = fired.groupby(data["time"].dt.strftime("%Y-%m-%d")).cumsum() - fired.astype(int)
-    raw.loc[fired & prior_today.gt(0)] = 0
+    if settings.signal_rearm_mode == "reset":
+        # Re-arm only after a completed bar has returned inside the rolling
+        # channel. This permits a genuinely fresh breakout, not repeated ticks
+        # from the same move.
+        armed = True
+        for index, row in data.iterrows():
+            if row["donchian_low"] <= row["close"] <= row["donchian_high"]:
+                armed = True
+            if raw.loc[index] != 0:
+                if not armed:
+                    raw.loc[index] = 0
+                else:
+                    armed = False
+    elif settings.signal_rearm_mode == "daily":
+        # The baseline fires only the first qualified breakout per market-day.
+        fired = raw.ne(0)
+        prior_today = fired.groupby(data["time"].dt.strftime("%Y-%m-%d")).cumsum() - fired.astype(int)
+        raw.loc[fired & prior_today.gt(0)] = 0
+    else:
+        raise ValueError(f"Unsupported SIGNAL_REARM_MODE={settings.signal_rearm_mode}")
     # Flat bars have zero score by definition; avoid constructing thousands of
     # pandas rows on every scanner cycle. Entry and ranking semantics unchanged.
     scores = pd.Series(0.0, index=data.index)
@@ -117,4 +132,6 @@ def generate_signal(frame: pd.DataFrame, settings: Settings) -> dict:
         "atr": None if pd.isna(row["atr"]) else float(row["atr"]),
         "opening_high": None if pd.isna(row["opening_high"]) else float(row["opening_high"]),
         "opening_low": None if pd.isna(row["opening_low"]) else float(row["opening_low"]),
+        "breakout_level": None if signal == 0 else float(
+            row["donchian_high"] if signal == 1 else row["donchian_low"]),
     }
