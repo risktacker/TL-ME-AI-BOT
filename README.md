@@ -46,10 +46,14 @@ gate before demo-forward trading; demo must pass before any live activation.
 
 ## Fast demo-forward profile
 
-`experiments/demo_fast_forward.env` is the explicit $20 Standard-account test
-profile. It holds volume at 0.01, scans all seven markets, can submit independent
-same-bar candidates, and rearms only after price returns inside the breakout
-channel. It does not set `VALIDATION_PASSED` and cannot unlock live trading.
+`experiments/demo_fast_forward.env` is the Standard-account fast test profile.
+The trader chooses the demo starting balance. On first run the service records
+that account's starting balance and assigns 0.01 lot per complete starting-
+balance unit: a $20 start uses 0.01, $40 equity uses 0.02, and so on. A different
+chosen starting balance becomes that account's own compounding base. The profile
+scans all seven markets, can submit independent same-bar candidates, and rearms
+only after price returns inside the breakout channel. It does not set
+`VALIDATION_PASSED` and cannot unlock live trading.
 
 `mt5/GolideFastManager.mq5` manages every GOLIDE position from one chart on a
 200 ms timer. It closes failed breakouts, exits trades that make no early
