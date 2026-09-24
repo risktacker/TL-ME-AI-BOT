@@ -41,7 +41,7 @@ def approve_trade(equity: float, state: RiskState, stop_distance: float,
                   settings: Settings) -> RiskDecision:
     if equity <= 0 or stop_distance <= 0:
         return RiskDecision(False, "invalid_equity_or_stop", 0.0, stop_distance)
-    if settings.risk_profile in {"micro_aggressive", "micro_fixed"}:
+    if settings.risk_profile in {"micro_aggressive", "micro_compound"}:
         return RiskDecision(True, "micro_structure_approved", 0.0, stop_distance)
     if state.daily_pnl <= -equity * settings.max_daily_loss_pct:
         return RiskDecision(False, "daily_loss_limit", 0.0, stop_distance)
@@ -61,12 +61,11 @@ def volume_for_profile(equity: float, stop_distance: float, tick_size: float,
         return VolumeDecision(False, "invalid_symbol_metadata", 0.0, 0.0)
     if not isfinite(settings.max_stop_risk_pct) or not 0 <= settings.max_stop_risk_pct <= 1:
         return VolumeDecision(False, "invalid_stop_risk_limit", 0.0, 0.0)
-    if settings.risk_profile in {"micro_aggressive", "micro_fixed"} and equity < settings.micro_balance_ceiling:
+    if settings.risk_profile in {"micro_aggressive", "micro_compound"} and equity < settings.micro_balance_ceiling:
         if any(not isfinite(v) or v <= 0 for v in (settings.micro_equity_per_step, settings.micro_volume)):
             return VolumeDecision(False, "invalid_micro_settings", 0.0, 0.0)
         equity_steps = max(1, int(equity // settings.micro_equity_per_step))
-        requested = (settings.micro_volume if settings.risk_profile == "micro_fixed"
-                     else settings.micro_volume * equity_steps)
+        requested = settings.micro_volume * equity_steps
         requested = max(requested, min_volume)
         steps = (Decimal(str(requested)) / Decimal(str(volume_step))).to_integral_value(rounding=ROUND_DOWN)
         volume = min(float(steps * Decimal(str(volume_step))), max_volume)
