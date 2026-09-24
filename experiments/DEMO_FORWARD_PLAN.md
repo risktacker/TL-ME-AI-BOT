@@ -5,8 +5,9 @@ unchanged baseline results into a validation pass and cannot unlock live mode.
 
 ## Operating profile
 
-- Exness Standard demo; model starting capital: USD 20.
-- Fixed 0.01 lot on EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, USDCHF and XAUUSD.
+- Exness Standard demo; the trader chooses the starting capital (currently USD 20).
+- The bot captures that account's initial balance, starts at 0.01 lot and adds
+  another 0.01 only for each full additional starting-balance unit earned.
 - Python retains the existing M15/H1/H4 entry package and ranks candidates.
 - Independent symbols may enter on the same completed bar. An already-open
   symbol is skipped; there is no arbitrary global two-position ceiling.
