@@ -22,6 +22,18 @@ def test_live_needs_independent_live_flag():
         executor._assert_unlocked()
 
 
+def test_demo_forward_unlock_is_demo_only(monkeypatch):
+    import core.trade_executor as module
+    monkeypatch.setattr(module, "mt5", object())
+    demo = TradeExecutor(Settings(execution_mode="demo", enable_order_submission=True,
+                                  demo_forward_enabled=True), Gateway(0))
+    demo._assert_unlocked()
+    live = TradeExecutor(Settings(execution_mode="live", enable_order_submission=True,
+                                  demo_forward_enabled=True, live_trading=True), Gateway(2))
+    with pytest.raises(PermissionError, match="VALIDATION_PASSED"):
+        live._assert_unlocked()
+
+
 class FakeMT5:
     SYMBOL_FILLING_FOK = 1
     SYMBOL_FILLING_IOC = 2
