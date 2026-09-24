@@ -30,8 +30,10 @@ class Settings:
     max_daily_loss_pct: float = 0.01
     max_consecutive_losses: int = 3
     max_trades_per_day: int = 1
-    risk_profile: str = "micro_aggressive"  # micro_fixed, micro_aggressive, or proportional
+    risk_profile: str = "micro_aggressive"  # micro_compound, micro_aggressive, or proportional
     micro_balance_ceiling: float = 1000.0
+    # In micro_compound mode zero means: capture this MT5 account's starting
+    # balance on first run and use it as the capital required per 0.01 lot.
     micro_equity_per_step: float = 10.0
     micro_volume: float = 0.01
     # Optional structural stop-risk ceiling. Zero preserves the legacy profile;
