@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 import pandas as pd
+from config import Settings
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "runtime"
@@ -36,6 +37,7 @@ def _trades() -> list[dict[str, Any]]:
 
 
 def overview() -> dict[str, Any]:
+    settings = Settings.from_env()
     control = _read_json(RUNTIME / "control.json", {"mode": "locked", "paused": True})
     market = _read_json(RUNTIME / "market.json", {"symbol": "XAUUSDm", "session": "offline", "signal": "flat", "signal_reason": "MT5 bridge not connected", "spread": None})
     account = _read_json(RUNTIME / "account.json", {"environment": "demo", "balance": None, "equity": None, "daily_pnl": 0.0, "drawdown_pct": 0.0, "trades_today": 0})
@@ -45,8 +47,12 @@ def overview() -> dict[str, Any]:
         "bot": {"name": "TL-ME Multi-Market", "strategy": "Ranked MTF Momentum", "mode": control.get("mode", "locked"), "paused": bool(control.get("paused", True)), "live_unlocked": False, "connection": "connected" if market.get("session") != "offline" else "offline"},
         "account": account, "market": market, "position": position,
         "validation": _validation(), "recent_trades": _trades(),
-        "risk": {"profile": "micro_aggressive", "micro_volume": 0.01,
-                 "selection": "highest_ranked_qualified_setup", "daily_shutdown": False},
+        "risk": {"profile": settings.risk_profile, "micro_volume": settings.micro_volume,
+                 "selection": ("all_independent_ranked_candidates"
+                               if settings.submit_all_candidates
+                               else "highest_ranked_qualified_setup"),
+                 "fast_manager": settings.fast_manager_enabled,
+                 "daily_shutdown": settings.risk_profile == "proportional"},
     }
 
 
