@@ -58,9 +58,11 @@ ratchets behind favorable movement. Python refuses new fast-profile orders when
 the EA heartbeat is missing or stale, so a stopped EA cannot leave Python
 submitting positions under the passive lifecycle.
 
-On the Windows MT5 computer, install/compile the manager with:
+On the Windows MT5 computer, merge the profile without losing existing local
+settings, then install/compile the manager:
 
 ```powershell
+py -m scripts.configure_demo_forward
 py -m scripts.install_fast_manager
 ```
 
