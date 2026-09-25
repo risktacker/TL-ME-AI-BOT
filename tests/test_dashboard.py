@@ -1,5 +1,6 @@
 from dashboard.state import overview
 from dashboard.app import api_control
+from config import Settings
 from fastapi import HTTPException
 import pytest
 
@@ -7,7 +8,7 @@ import pytest
 def test_dashboard_never_reports_live_unlocked():
     state = overview()
     assert state["bot"]["live_unlocked"] is False
-    assert state["risk"]["profile"] == "micro_aggressive"
+    assert state["risk"]["profile"] == Settings.from_env().risk_profile
 
 
 def test_dashboard_has_expected_sections():
