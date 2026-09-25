@@ -1,0 +1,2 @@
+"""GOLIDE trading control panel."""
+
