@@ -8,6 +8,7 @@ $PanelTask = Get-ScheduledTask -TaskName "GOLIDE-Control-Panel" -ErrorAction Sil
 if (-not (Test-Path $Python) -or $null -eq $BotTask -or $null -eq $PanelTask) {
     & (Join-Path $PSScriptRoot "Install-Golide.ps1")
 }
+if (-not (Test-Path $Python)) { throw "The GOLIDE Python environment was not created." }
 
 & $Python -m pip install -r requirements.txt
 & $Python -m scripts.configure_demo_forward
