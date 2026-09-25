@@ -2,7 +2,14 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $Root
 
-if (-not (Test-Path ".venv")) { py -3.12 -m venv .venv }
+if (-not (Test-Path ".\.venv\Scripts\python.exe")) {
+    py -3.12 -m venv .venv
+    if (-not (Test-Path ".\.venv\Scripts\python.exe")) { py -3.11 -m venv .venv }
+    if (-not (Test-Path ".\.venv\Scripts\python.exe")) { py -m venv .venv }
+}
+if (-not (Test-Path ".\.venv\Scripts\python.exe")) {
+    throw "Python 3.11 or 3.12 is required to create .venv."
+}
 & ".\.venv\Scripts\python.exe" -m pip install --upgrade pip
 & ".\.venv\Scripts\python.exe" -m pip install -r requirements.txt
 if (-not (Test-Path ".env")) {
