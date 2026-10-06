@@ -62,8 +62,17 @@ input int             InpLossStreakPause     = 3;       // after N losses in a r
 input int             InpPauseMinutes        = 30;      // ...pause entries this long, then resume
 input double          InpSpikeATR            = 3.0;     // skip entries if current candle range > X * ATR (0 = off)
 input int             InpMaxTradesPerDay     = 0;       // 0 = unlimited
-input int             InpMaxSpreadPoints     = 350;     // skip entries when spread is wider (symbol points)
+input int             InpMaxSpreadPoints     = 0;       // 0 = off. Absolute cap in symbol points
+input double          InpMaxSpreadATR        = 0.25;    // skip entries if spread > X * ATR (works on any pair; 0 = off)
 input int             InpDeviationPoints     = 50;
+
+//--- account-wide limits (shared by every chart running this EA with the same magic)
+input int             InpMaxAccountPositions = 6;       // total open positions across all pairs
+input double          InpAccountBasketPercent= 10.0;    // close ALL pairs if total open loss reaches -X% of equity
+
+//--- Twelve Data scan filter (written by scripts/twelvedata_scan.py)
+input bool            InpUseScanFile         = false;   // only trade pairs/directions the scan approves
+input int             InpScanMaxAgeMinutes   = 60;      // ignore a stale scan file
 
 //--- session (broker server time; Exness server = UTC)
 input bool            InpUseSession          = false;
@@ -148,6 +157,77 @@ int CountPositions(int &dir,bool &allProtected,double &floating)
          allProtected=false;
      }
    return n;
+  }
+
+//--- all positions of this EA on every symbol
+int AccountPositions(double &floating)
+  {
+   int n=0;
+   floating=0;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong t=PositionGetTicket(i);
+      if(t==0 || PositionGetInteger(POSITION_MAGIC)!=InpMagic)
+         continue;
+      n++;
+      floating+=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
+     }
+   return n;
+  }
+
+void CloseAllAccount(const string reason)
+  {
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong t=PositionGetTicket(i);
+      if(t==0 || PositionGetInteger(POSITION_MAGIC)!=InpMagic)
+         continue;
+      trade.PositionClose(t);
+     }
+   LogEvent("CLOSE_ACCOUNT",reason);
+  }
+
+//--- scan file: lines "EURUSD,1,0.42" (symbol, allowed direction 1/-1/0, score)
+string BaseSymbol(const string s)
+  {
+   string u=s;
+   StringToUpper(u);
+   string out="";
+   for(int i=0;i<StringLen(u) && StringLen(out)<6;i++)
+     {
+      ushort c=StringGetCharacter(u,i);
+      if(c>='A' && c<='Z')
+         out+=ShortToString(c);
+     }
+   return out;
+  }
+
+int ScanDirection()   // 2 = no usable scan (trade normally)
+  {
+   string path="TLME\\scan.csv";
+   if(!FileIsExist(path,FILE_COMMON))
+      return 2;
+   datetime modified=(datetime)FileGetInteger(path,FILE_MODIFY_DATE,true);
+   if(TimeLocal()-modified>InpScanMaxAgeMinutes*60)
+      return 2;
+   int h=FileOpen(path,FILE_READ|FILE_CSV|FILE_ANSI|FILE_COMMON|FILE_SHARE_READ,',');
+   if(h==INVALID_HANDLE)
+      return 2;
+   string me=BaseSymbol(_Symbol);
+   int result=0;              // a fresh scan that doesn't list us = don't trade
+   while(!FileIsEnding(h))
+     {
+      string sym=FileReadString(h);
+      string dir=FileReadString(h);
+      FileReadString(h);       // score
+      if(BaseSymbol(sym)==me)
+        {
+         result=(int)StringToInteger(dir);
+         break;
+        }
+     }
+   FileClose(h);
+   return result;
   }
 
 void CloseAll(const string reason)
@@ -352,6 +432,13 @@ void OnTick()
    double equity=AccountInfoDouble(ACCOUNT_EQUITY);
 
    //--- hard limits, checked every tick
+   double acctFloating;
+   int acctOpen=AccountPositions(acctFloating);
+   if(acctOpen>0 && InpAccountBasketPercent>0 && acctFloating<=-equity*InpAccountBasketPercent/100.0)
+     {
+      CloseAllAccount("account basket stop "+DoubleToString(acctFloating,2));
+      return;
+     }
    if(open>0 && floating<=-equity*InpBasketStopPercent/100.0)
      {
       CloseAll("basket stop "+DoubleToString(floating,2));
@@ -386,12 +473,22 @@ void OnTick()
      }
    if(TimeCurrent()-lastEntryTime<InpMinSecondsBetween)
       return;
-   if(SymbolInfoInteger(_Symbol,SYMBOL_SPREAD)>InpMaxSpreadPoints)
+   if(InpMaxSpreadPoints>0 && SymbolInfoInteger(_Symbol,SYMBOL_SPREAD)>InpMaxSpreadPoints)
+      return;
+   if(InpMaxSpreadATR>0 && SymbolInfoDouble(_Symbol,SYMBOL_ASK)-SymbolInfoDouble(_Symbol,SYMBOL_BID)>InpMaxSpreadATR*atr)
+      return;
+   if(InpMaxAccountPositions>0 && acctOpen>=InpMaxAccountPositions)
       return;
 
    int signal=Signal(atr);
    if(signal==0)
       return;
+   if(InpUseScanFile)
+     {
+      int allowed=ScanDirection();
+      if(allowed!=2 && allowed!=signal)
+         return;               // scan says this pair isn't trending that way
+     }
    if(open>0)
      {
       if(open>=InpMaxPositions || signal!=dir || !allProt)
