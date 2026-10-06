@@ -17,7 +17,18 @@
 input long            InpMagic               = 261006;
 input bool            InpDemoOrCentOnly      = false;   // true = refuse to run on real standard accounts
 
-//--- trend filter (higher timeframe)
+enum ENUM_TREND_MODE
+  {
+   TREND_EMA_PULLBACK=0,   // M15 EMA trend + M1 RSI pullback entry
+   TREND_CANDLE_MOMENTUM=1 // last N signal candles same direction -> follow it
+  };
+input ENUM_TREND_MODE InpTrendMode           = TREND_EMA_PULLBACK;
+
+//--- momentum mode
+input int             InpMomentumCandles     = 2;       // consecutive same-direction candles
+input double          InpMomentumMinBodyATR  = 0.3;     // each candle body at least this x ATR
+
+//--- trend filter (higher timeframe, EMA mode)
 input ENUM_TIMEFRAMES InpTrendTF             = PERIOD_M15;
 input int             InpTrendEMA            = 50;
 input int             InpTrendSlopeBars      = 3;       // EMA must be rising/falling over this many bars
@@ -39,20 +50,23 @@ input double          InpTrailDistanceATR    = 0.5;
 input int             InpMaxHoldMinutes      = 15;      // time exit: scalps don't become swings
 
 //--- position sizing
-input double          InpRiskPercent         = 1.0;     // % of equity risked per position at the stop
+input double          InpRiskPercent         = 2.0;      // % of equity risked per position at the stop
 input double          InpFixedLots           = 0.0;     // >0 overrides risk sizing
 input int             InpMaxPositions        = 3;       // stacked entries in the trend direction
 input int             InpMinSecondsBetween   = 30;
 
 //--- hard risk limits (the account protection)
-input double          InpDailyLossPercent    = 5.0;     // stop trading for the day at -X% from day start
-input double          InpBasketStopPercent   = 3.0;     // close everything if open loss reaches -X% of equity
-input int             InpMaxTradesPerDay     = 60;
+input double          InpDailyLossPercent    = 0.0;     // 0 = off. Else stop for the day at -X% from day start
+input double          InpBasketStopPercent   = 6.0;     // close everything if open loss reaches -X% of equity
+input int             InpLossStreakPause     = 3;       // after N losses in a row... (0 = off)
+input int             InpPauseMinutes        = 30;      // ...pause entries this long, then resume
+input double          InpSpikeATR            = 3.0;     // skip entries if current candle range > X * ATR (0 = off)
+input int             InpMaxTradesPerDay     = 0;       // 0 = unlimited
 input int             InpMaxSpreadPoints     = 350;     // skip entries when spread is wider (symbol points)
 input int             InpDeviationPoints     = 50;
 
 //--- session (broker server time; Exness server = UTC)
-input bool            InpUseSession          = true;
+input bool            InpUseSession          = false;
 input int             InpSessionStartHour    = 12;      // 12:00 UTC = 14:00 CAT, before NY open
 input int             InpSessionEndHour      = 17;      // 17:00 UTC = 19:00 CAT
 
@@ -64,6 +78,8 @@ int      dayKey=0;
 double   dayStartEquity=0;
 int      tradesToday=0;
 bool     haltedToday=false;
+int      lossStreak=0;
+datetime pauseUntil=0;
 
 //+------------------------------------------------------------------+
 //| logging for the Python / Telegram layer                           |
@@ -203,6 +219,30 @@ int EntrySignal(const int trend)
    return 0;
   }
 
+int MomentumSignal(const double atr)
+  {
+   int n=MathMax(1,InpMomentumCandles);
+   int dir=0;
+   for(int i=1;i<=n;i++)
+     {
+      double o=iOpen(_Symbol,InpSignalTF,i), c=iClose(_Symbol,InpSignalTF,i);
+      double body=c-o;
+      if(MathAbs(body)<InpMomentumMinBodyATR*atr)
+         return 0;
+      int d=body>0?1:-1;
+      if(dir==0) dir=d;
+      else if(d!=dir) return 0;
+     }
+   return dir;
+  }
+
+int Signal(const double atr)
+  {
+   if(InpTrendMode==TREND_CANDLE_MOMENTUM)
+      return MomentumSignal(atr);
+   return EntrySignal(TrendDirection());
+  }
+
 //+------------------------------------------------------------------+
 //| per-tick management: break-even, trailing, time exit              |
 //+------------------------------------------------------------------+
@@ -317,7 +357,7 @@ void OnTick()
       CloseAll("basket stop "+DoubleToString(floating,2));
       return;
      }
-   if(!haltedToday && equity<=dayStartEquity*(1.0-InpDailyLossPercent/100.0))
+   if(InpDailyLossPercent>0 && !haltedToday && equity<=dayStartEquity*(1.0-InpDailyLossPercent/100.0))
      {
       haltedToday=true;
       CloseAll("daily loss limit");
@@ -334,14 +374,22 @@ void OnTick()
       return;
    lastSignalBar=bar;
 
-   if(haltedToday || !InSession() || tradesToday>=InpMaxTradesPerDay || atr<=0)
+   if(haltedToday || !InSession() || atr<=0 || TimeCurrent()<pauseUntil)
       return;
+   if(InpMaxTradesPerDay>0 && tradesToday>=InpMaxTradesPerDay)
+      return;
+   if(InpSpikeATR>0)
+     {
+      double hi=iHigh(_Symbol,InpSignalTF,1), lo=iLow(_Symbol,InpSignalTF,1);
+      if(hi-lo>InpSpikeATR*atr)
+         return;               // news-like spike: stand aside
+     }
    if(TimeCurrent()-lastEntryTime<InpMinSecondsBetween)
       return;
    if(SymbolInfoInteger(_Symbol,SYMBOL_SPREAD)>InpMaxSpreadPoints)
       return;
 
-   int signal=EntrySignal(TrendDirection());
+   int signal=Signal(atr);
    if(signal==0)
       return;
    if(open>0)
@@ -392,5 +440,12 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
    double pnl=HistoryDealGetDouble(trans.deal,DEAL_PROFIT)+HistoryDealGetDouble(trans.deal,DEAL_COMMISSION)
               +HistoryDealGetDouble(trans.deal,DEAL_SWAP);
    LogEvent("CLOSED","deal="+(string)trans.deal+" pnl="+DoubleToString(pnl,2));
+   if(pnl<0) lossStreak++; else lossStreak=0;
+   if(InpLossStreakPause>0 && lossStreak>=InpLossStreakPause)
+     {
+      pauseUntil=TimeCurrent()+InpPauseMinutes*60;
+      lossStreak=0;
+      LogEvent("PAUSE",(string)InpPauseMinutes+" min after "+(string)InpLossStreakPause+" losses in a row");
+     }
   }
 //+------------------------------------------------------------------+
