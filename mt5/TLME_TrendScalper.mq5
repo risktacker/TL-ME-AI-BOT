@@ -9,7 +9,7 @@
 //
 // Attach one instance to one XAUUSD chart (any chart timeframe).
 #property strict
-#property version   "1.20"
+#property version   "1.30"
 
 #include <Trade/Trade.mqh>
 
@@ -50,14 +50,14 @@ input double          InpTrailDistanceATR    = 0.5;
 input int             InpMaxHoldMinutes      = 45;      // time exit: scalps don't become swings
 
 //--- position sizing
-input double          InpRiskPercent         = 2.0;      // % of equity risked per position at the stop
+input double          InpRiskPercent         = 5.0;      // % of equity risked per position at the stop
 input double          InpFixedLots           = 0.0;     // >0 overrides risk sizing
 input int             InpMaxPositions        = 3;       // stacked entries in the trend direction
 input int             InpMinSecondsBetween   = 30;
 
 //--- hard risk limits (the account protection)
 input double          InpDailyLossPercent    = 0.0;     // 0 = off. Else stop for the day at -X% from day start
-input double          InpBasketStopPercent   = 6.0;     // close everything if open loss reaches -X% of equity
+input double          InpBasketStopPercent   = 15.0;    // close everything if open loss reaches -X% of equity
 input int             InpLossStreakPause     = 3;       // after N losses in a row... (0 = off)
 input int             InpPauseMinutes        = 30;      // ...pause entries this long, then resume
 input double          InpSpikeATR            = 3.0;     // skip entries if current candle range > X * ATR (0 = off)
@@ -68,7 +68,7 @@ input int             InpDeviationPoints     = 50;
 
 //--- account-wide limits (shared by every chart running this EA with the same magic)
 input int             InpMaxAccountPositions = 6;       // total open positions across all pairs
-input double          InpAccountBasketPercent= 10.0;    // close ALL pairs if total open loss reaches -X% of equity
+input double          InpAccountBasketPercent= 30.0;    // close ALL pairs if total open loss reaches -X% of equity
 
 //--- Twelve Data scan filter (written by scripts/twelvedata_scan.py)
 input bool            InpUseScanFile         = false;   // only trade pairs/directions the scan approves
