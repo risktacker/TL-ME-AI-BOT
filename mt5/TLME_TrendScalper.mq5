@@ -546,3 +546,51 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
      }
   }
 //+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+//| Tester report in DAYS: trades/day, $/day, best/worst day,        |
+//| green-day %. Printed to the tester Journal. Return value =       |
+//| average $ per trading day (use "Custom max" in optimization).    |
+//+------------------------------------------------------------------+
+double OnTester()
+  {
+   if(!HistorySelect(0,TimeCurrent()))
+      return 0;
+   int    days=0, green=0, trades=0, curKey=-1;
+   double sum=0, dayPnl=0, best=-DBL_MAX, worst=DBL_MAX;
+   int total=HistoryDealsTotal();
+   for(int i=0;i<=total;i++)
+     {
+      bool last=(i==total);
+      int key=-1; double pnl=0;
+      if(!last)
+        {
+         ulong d=HistoryDealGetTicket(i);
+         if(d==0 || HistoryDealGetInteger(d,DEAL_MAGIC)!=InpMagic || HistoryDealGetInteger(d,DEAL_ENTRY)!=DEAL_ENTRY_OUT)
+            continue;
+         MqlDateTime t;
+         TimeToStruct((datetime)HistoryDealGetInteger(d,DEAL_TIME),t);
+         key=t.year*10000+t.mon*100+t.day;
+         pnl=HistoryDealGetDouble(d,DEAL_PROFIT)+HistoryDealGetDouble(d,DEAL_COMMISSION)+HistoryDealGetDouble(d,DEAL_SWAP);
+         trades++;
+        }
+      if((last || key!=curKey) && curKey!=-1)
+        {
+         days++; sum+=dayPnl;
+         if(dayPnl>0) green++;
+         best=MathMax(best,dayPnl); worst=MathMin(worst,dayPnl);
+         dayPnl=0;
+        }
+      if(last) break;
+      curKey=key;
+      dayPnl+=pnl;
+     }
+   if(days==0)
+     {
+      Print("[TLME DAILY] no trades");
+      return 0;
+     }
+   PrintFormat("[TLME DAILY] trading days=%d | trades/day=%.1f | avg/day=%.2f | best day=%.2f | worst day=%.2f | green days=%.0f%%",
+               days,(double)trades/days,sum/days,best,worst,100.0*green/days);
+   return sum/days;
+  }
