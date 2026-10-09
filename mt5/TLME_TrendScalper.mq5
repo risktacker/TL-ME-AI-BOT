@@ -9,13 +9,13 @@
 //
 // Attach one instance to one XAUUSD chart (any chart timeframe).
 #property strict
-#property version   "1.00"
+#property version   "1.20"
 
 #include <Trade/Trade.mqh>
 
 //--- identity
 input long            InpMagic               = 261006;
-input bool            InpDemoOrCentOnly      = false;   // true = refuse to run on real standard accounts
+input bool            InpDemoOrCentOnly      = true;    // true = refuse to run on real standard accounts
 
 enum ENUM_TREND_MODE
   {
@@ -42,12 +42,12 @@ input double          InpRSISellLevel        = 60.0;    // in downtrend: RSI pop
 
 //--- exits (multiples of signal-TF ATR)
 input int             InpATRPeriod           = 14;
-input double          InpStopATR             = 1.5;
-input double          InpTargetATR           = 1.0;
-input double          InpBreakEvenATR        = 0.5;     // move SL to entry (+buffer) after this much profit
+input double          InpStopATR             = 2.75;
+input double          InpTargetATR           = 1.5;
+input double          InpBreakEvenATR        = 0.3;     // move SL to entry (+buffer) after this much profit
 input double          InpTrailStartATR       = 0.7;
 input double          InpTrailDistanceATR    = 0.5;
-input int             InpMaxHoldMinutes      = 15;      // time exit: scalps don't become swings
+input int             InpMaxHoldMinutes      = 45;      // time exit: scalps don't become swings
 
 //--- position sizing
 input double          InpRiskPercent         = 2.0;      // % of equity risked per position at the stop
